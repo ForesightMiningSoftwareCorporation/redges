@@ -1,0 +1,91 @@
+use std::fmt::Debug;
+
+pub trait PrimitiveContainer: Clone + Debug {
+    type PrimitiveData: Clone + Debug;
+
+    fn get(&self, index: u64) -> &Self::PrimitiveData;
+    fn get_mut(&mut self, index: u64) -> &mut Self::PrimitiveData;
+    fn set(&mut self, index: u64, data: Self::PrimitiveData);
+
+    fn push(&mut self, data: Self::PrimitiveData);
+    fn remove(&mut self, index: u64) -> Self::PrimitiveData;
+    fn swap_remove(&mut self, index: u64) -> Self::PrimitiveData;
+
+    fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, f: F);
+
+    fn len(&self) -> usize;
+
+    fn iterate(&self) -> impl Iterator<Item = &Self::PrimitiveData>;
+}
+
+impl<T: Clone + Debug> PrimitiveContainer for Vec<T> {
+    type PrimitiveData = T;
+
+    fn get(&self, index: u64) -> &Self::PrimitiveData {
+        &self[index as usize]
+    }
+
+    fn get_mut(&mut self, index: u64) -> &mut Self::PrimitiveData {
+        &mut self[index as usize]
+    }
+
+    fn set(&mut self, index: u64, data: Self::PrimitiveData) {
+        self[index as usize] = data
+    }
+
+    fn push(&mut self, data: Self::PrimitiveData) {
+        self.push(data)
+    }
+
+    fn remove(&mut self, index: u64) -> Self::PrimitiveData {
+        self.remove(index as usize)
+    }
+
+    fn swap_remove(&mut self, index: u64) -> Self::PrimitiveData {
+        self.swap_remove(index as usize)
+    }
+
+    fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, f: F) {
+        self.retain(f)
+    }
+
+    fn iterate(&self) -> impl Iterator<Item = &Self::PrimitiveData> {
+        self.iter()
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl PrimitiveContainer for () {
+    type PrimitiveData = ();
+
+    fn get(&self, _index: u64) -> &Self::PrimitiveData {
+        self
+    }
+
+    fn get_mut(&mut self, _index: u64) -> &mut Self::PrimitiveData {
+        self
+    }
+
+    fn set(&mut self, _index: u64, _data: Self::PrimitiveData) {}
+
+    fn push(&mut self, _he1data: Self::PrimitiveData) {}
+
+    fn remove(&mut self, _index: u64) -> Self::PrimitiveData {}
+
+    fn swap_remove(&mut self, _index: u64) -> Self::PrimitiveData {
+        ()
+    }
+
+    fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, _f: F) {}
+
+    fn iterate(&self) -> impl Iterator<Item = &Self::PrimitiveData> {
+        std::iter::empty()
+    }
+
+    fn len(&self) -> usize {
+        0
+    }
+}

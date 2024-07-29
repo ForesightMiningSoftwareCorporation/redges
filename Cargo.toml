@@ -1,0 +1,7 @@
+[package]
+name = "redges"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+linear_isomorphic = "0.2.0"
