@@ -1,9 +1,15 @@
 use std::collections::BTreeMap;
 
-use linear_isomorphic::*;
-
 pub mod container_trait;
+pub mod edge_handle;
+pub mod face_handle;
+pub mod hedge_handle;
+pub mod iterators;
+pub mod validation;
+pub mod vert_handle;
 use container_trait::PrimitiveContainer;
+mod wavefront_loader;
+
 macro_rules! define_id_struct {
     ($name:ident) => {
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
@@ -30,7 +36,7 @@ pub const ABSENT: usize = usize::MAX;
 
 define_id_struct!(VertId);
 define_id_struct!(EdgeId);
-define_id_struct!(LoopId);
+define_id_struct!(HedgeId);
 define_id_struct!(FaceId);
 
 pub struct Redge<VContainer, EContainer, FContainer>
@@ -45,7 +51,7 @@ where
 
     verts_meta: Vec<VertMetaData>,
     edges_meta: Vec<EdgeMetaData>,
-    loops_meta: Vec<LoopMetaData>,
+    hedges_meta: Vec<HedgeMetaData>,
     faces_meta: Vec<FaceMetaData>,
 }
 
@@ -55,12 +61,12 @@ where
     EContainer: PrimitiveContainer,
     FContainer: PrimitiveContainer,
 {
-    pub fn new<I>(
+    pub fn new(
         vert_data: VContainer,
         edge_data: EContainer,
         face_data: FContainer,
         faces: impl Iterator<Item = impl Iterator<Item = usize>>,
-    ) {
+    ) -> Self {
         // 1. Initialize the setup structures.
         let mut edge_index_map = BTreeMap::<[usize; 2], usize>::new();
         let mut verts_meta = (0..vert_data.len())
@@ -70,10 +76,10 @@ where
             })
             .collect::<Vec<_>>();
         let mut edges_meta = Vec::new();
-        let mut loops_meta = Vec::new();
+        let mut hedges_meta = Vec::new();
         let mut faces_meta = Vec::new();
 
-        // 2. Create all needed edges, faces and loops. (Set up some of the pointers)
+        // 2. Create all needed edges, faces and hedges. (Set up some of the pointers)
         for face in faces {
             let face_vertices = face.collect::<Vec<_>>();
             let face_index = faces_meta.len();
@@ -83,8 +89,8 @@ where
             });
             let active_face = faces_meta.last_mut().unwrap();
 
-            // Remember where we started adding loops.
-            let loop_cutoff = loops_meta.len();
+            // Remember where we started adding hedges.
+            let hedge_cutoff = hedges_meta.len();
             for i in 0..face_vertices.len() {
                 let v1 = face_vertices[i];
                 let v2 = face_vertices[(i + 1) % face_vertices.len()];
@@ -118,62 +124,63 @@ where
                 verts_meta[v1].edge_id = edge.id;
                 verts_meta[v2].edge_id = edge.id;
 
-                // Add a new loop.
-                let loop_id = LoopId(loops_meta.len());
-                loops_meta.push(LoopMetaData {
-                    id: loop_id,
+                // Add a new hedge.hedge_id
+                let hedge_id = HedgeId(hedges_meta.len());
+                hedges_meta.push(HedgeMetaData {
+                    id: hedge_id,
                     edge_id: edge.id,
                     source_id: VertId(v1),
                     face_id: FaceId(face_index),
+                    radial_next_id: hedge_id,
+                    radial_prev_id: hedge_id,
+                    // The order in which we add hedges to the array is predictable.
+                    face_next_id: HedgeId(hedge_cutoff + ((i + 1) % face_vertices.len())),
+                    face_prev_id: HedgeId(
+                        hedge_cutoff + ((i + face_vertices.len() - 1) % face_vertices.len()),
+                    ),
                     ..Default::default()
                 });
-                attach_loop_to_edge(edge, loop_id, &mut loops_meta);
 
-                active_face.loop_id = loop_id;
-            }
-
-            // Create a doubly linked list for the loops around the face, in the
-            // order in which the edges were declared.
-            for i in 0..face_vertices.len() {
-                let prev_id = LoopId(loop_cutoff + i);
-                let next_id = LoopId(loop_cutoff + (i % face_vertices.len()));
-
-                link_loop_in_face(prev_id, next_id, &mut loops_meta);
+                active_face.hedge_id = hedge_id;
             }
         }
 
-        // 3. Enforce that there are no singleton radial loops.
-        for i in 0..loops_meta.len() {
-            // If a loop has no other elements in its cycle, we will make a new loop
+        // 3. Enforce that there are no singleton radial hedges.
+        for i in 0..hedges_meta.len() {
+            // If a hedge has no other elements in its cycle, we will make a new hedge
             // in the opposite direction and add it to the cycle.
-            if loops_meta[i].radial_next_id == loops_meta[i].radial_prev_id {
+            if hedges_meta[i].radial_next_id == hedges_meta[i].radial_prev_id {
                 // The prev and next should only ever be equal if they point to
-                // the same loop.
-                debug_assert!(loops_meta[i].radial_next_id == loops_meta[i].id);
+                // the same hedge.
+                debug_assert!(
+                    hedges_meta[i].radial_next_id == hedges_meta[i].id,
+                    "Singleton hedge is incorrect, next_id {:?}, id {:?}",
+                    hedges_meta[i].radial_next_id,
+                    hedges_meta[i].id
+                );
 
-                let edge_id = loops_meta[i].edge_id;
+                let edge_id = hedges_meta[i].edge_id;
                 debug_assert!(!edge_id.is_absent());
-                let source_id = loops_meta[i].source_id;
+                let source_id = hedges_meta[i].source_id;
                 debug_assert!(!source_id.is_absent());
 
                 // The source of the pair is the destination of the current
-                // loop.
+                // hedge.
                 let [v1, v2] = edges_meta[edge_id.to_index()].vert_ids;
                 let dest = if source_id == v1 { v2 } else { v1 };
 
-                let loop_id = LoopId(loops_meta.len());
-                loops_meta.push(LoopMetaData {
-                    id: loop_id,
+                let hedge_id = HedgeId(hedges_meta.len());
+                hedges_meta.push(HedgeMetaData {
+                    id: hedge_id,
                     source_id: dest,
                     ..Default::default()
                 });
 
-                attach_loop_to_edge(
+                attach_hedge_to_edge(
                     &mut edges_meta[edge_id.to_index()],
-                    loop_id,
-                    &mut loops_meta,
+                    hedge_id,
+                    &mut hedges_meta,
                 );
-                link_loop_in_face(LoopId(i), loop_id, &mut loops_meta);
             }
         }
 
@@ -208,9 +215,104 @@ where
                 cycle2.prev_edge = e1.id;
             }
         }
+
+        Self {
+            vert_data,
+            edge_data,
+            face_data,
+            verts_meta,
+            edges_meta,
+            hedges_meta,
+            faces_meta,
+        }
+    }
+
+    pub fn to_face_list(&self) -> (Vec<VContainer::PrimitiveData>, Vec<Vec<usize>>) {
+        let verts = self.vert_data.iterate().cloned().collect();
+        let mut faces = Vec::with_capacity(self.faces_meta.len());
+
+        for face in &self.faces_meta {
+            debug_assert!(!face.hedge_id.is_absent());
+            let mut current_hedge = &self.hedges_meta[face.hedge_id.to_index()];
+            let start_hedge_id = current_hedge.id;
+
+            let mut current_face = Vec::with_capacity(3);
+            loop {
+                let source_id = current_hedge.source_id;
+                current_face.push(source_id.to_index());
+
+                let next_hedge_id = current_hedge.face_next_id;
+                debug_assert!(!next_hedge_id.is_absent());
+
+                current_hedge = &self.hedges_meta[next_hedge_id.to_index()];
+
+                if current_hedge.id == start_hedge_id {
+                    break;
+                }
+            }
+
+            faces.push(current_face);
+        }
+
+        (verts, faces)
     }
 }
 
+#[derive(Default, Debug, Clone)]
+struct VertMetaData {
+    id: VertId,
+    /// Points to any edge that touches this vertex.
+    edge_id: EdgeId,
+}
+#[derive(Default, Debug, Clone)]
+struct EdgeMetaData {
+    id: EdgeId,
+    /// The two endpoints of the edge.
+    vert_ids: [VertId; 2],
+    /// Any hedge on a face alongside this edge.
+    hedge_id: HedgeId,
+    /// Edges touching the v1 endpoint.
+    v1_cycle: StarCycleNode,
+    /// Edges touching the v2 endpoint.
+    v2_cycle: StarCycleNode,
+}
+
+/// This is the radial part of the edge. It's part of the cycle of all the
+/// directed edges of all faces that touch an edge. The `radial_*` pointers
+/// refer to directed edges that are parallel to each other. For example,
+/// if 3 faces meet at the edge, then the pointers form a doubly linked
+/// list of 3 elements that radially orbits the edge.
+/// The `face_*` pointers are the cycle of directed edges along a face, obeying
+/// its orientation.
+#[derive(Default, Debug, Clone)]
+struct HedgeMetaData {
+    id: HedgeId,
+    source_id: VertId,
+    edge_id: EdgeId,
+    /// Next hedge in the parallel cycle around the edge.
+    radial_next_id: HedgeId,
+    /// Prev hedge in the parallel cycle around the edge.
+    radial_prev_id: HedgeId,
+    /// Next hedge in the face.
+    face_next_id: HedgeId,
+    /// Prev hedge in the face.
+    face_prev_id: HedgeId,
+    face_id: FaceId,
+}
+
+#[derive(Default, Debug, Clone)]
+struct FaceMetaData {
+    id: FaceId,
+    hedge_id: HedgeId,
+}
+
+#[derive(Default, Debug, Clone)]
+struct StarCycleNode {
+    prev_edge: EdgeId,
+    next_edge: EdgeId,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum Endpoint {
     V1,
     V2,
@@ -226,84 +328,78 @@ fn get_disjoint<'a, T>(x: &'a mut [T], a: usize, b: usize) -> (&'a mut T, &'a mu
 }
 
 #[inline]
-fn attach_loop_to_edge(
+fn attach_hedge_to_edge(
     edge_meta: &mut EdgeMetaData,
-    new_loop_id: LoopId,
-    loops: &mut Vec<LoopMetaData>,
+    new_hedge_id: HedgeId,
+    hedges: &mut Vec<HedgeMetaData>,
 ) {
-    if edge_meta.loop_id.is_absent() {
-        edge_meta.loop_id = new_loop_id;
-        loops[new_loop_id.to_index()].radial_next_id = new_loop_id;
-        loops[new_loop_id.to_index()].radial_prev_id = new_loop_id;
+    if edge_meta.hedge_id.is_absent() {
+        edge_meta.hedge_id = new_hedge_id;
+        hedges[new_hedge_id.to_index()].radial_next_id = new_hedge_id;
+        hedges[new_hedge_id.to_index()].radial_prev_id = new_hedge_id;
     } else {
-        insert_loop_in_cycle(edge_meta.loop_id, new_loop_id, loops);
+        insert_hedge_in_cycle(edge_meta.hedge_id, new_hedge_id, hedges);
     }
 }
 /// Insert `new` into the doubly linked list containing `old_id` between `old_id` and its next.
 #[inline]
-fn insert_loop_in_cycle(old_id: LoopId, new_id: LoopId, loops: &mut Vec<LoopMetaData>) {
-    let old_next_id = loops[old_id.to_index()].radial_next_id;
+fn insert_hedge_in_cycle(old_id: HedgeId, new_id: HedgeId, hedges: &mut Vec<HedgeMetaData>) {
+    let old_next_id = hedges[old_id.to_index()].radial_next_id;
 
-    link_loop_in_face(old_id, new_id, loops);
-    link_loop_in_face(new_id, old_next_id, loops);
+    link_hedge_in_face(old_id, new_id, hedges);
+    link_hedge_in_face(new_id, old_next_id, hedges);
 }
 
 #[inline]
-fn link_loop_in_face(prev_id: LoopId, next_id: LoopId, loops: &mut Vec<LoopMetaData>) {
-    loops[prev_id.to_index()].radial_next_id = next_id;
-    loops[next_id.to_index()].radial_prev_id = prev_id;
+fn link_hedge_in_face(prev_id: HedgeId, next_id: HedgeId, hedges: &mut Vec<HedgeMetaData>) {
+    hedges[prev_id.to_index()].face_next_id = next_id;
+    hedges[next_id.to_index()].face_prev_id = prev_id;
 }
 
-#[derive(Default, Debug, Clone)]
-struct VertMetaData {
-    id: VertId,
-    /// Points to any edge that touches this vertex.
-    edge_id: EdgeId,
-}
-#[derive(Default, Debug, Clone)]
-struct EdgeMetaData {
-    id: EdgeId,
-    /// The two endpoints of the edge.
-    vert_ids: [VertId; 2],
-    /// Any loop on a face alongside this edge.
-    loop_id: LoopId,
-    /// Edges touching the v1 endpoint.
-    v1_cycle: StarCycleNode,
-    /// Edges touching the v2 endpoint.
-    v2_cycle: StarCycleNode,
-}
+#[cfg(test)]
+mod tests {
+    use wavefront_loader::ObjData;
 
-/// This is the radial part of the edge. It's part of the cycle of all the
-/// directed edges of all faces that touch an edge. The `radial_*` pointers
-/// refer to directed edges that are parallel to each other. For example,
-/// if 3 faces meet at the edge, then the pointers form a doubly linked
-/// list of 3 elements that radially orbites the edge.
-/// The `face_*` pointers are the cycle of directed edges along a face, obeying
-/// its orientation.
-#[derive(Default, Debug, Clone)]
-struct LoopMetaData {
-    id: LoopId,
-    source_id: VertId,
-    edge_id: EdgeId,
-    /// Next loop in the parallel cycle around the edge.
-    radial_next_id: LoopId,
-    /// Prev loop in the parallel cycle around the edge.
-    radial_prev_id: LoopId,
-    /// Next loop in the face.
-    face_next_id: LoopId,
-    /// Prev loop in the face.
-    face_prev_id: LoopId,
-    face_id: FaceId,
-}
+    use super::*;
 
-#[derive(Default, Debug, Clone)]
-struct FaceMetaData {
-    id: FaceId,
-    loop_id: LoopId,
-}
+    #[test]
+    fn test_redge_init() {
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/tetrahedron.obj");
 
-#[derive(Default, Debug, Clone)]
-struct StarCycleNode {
-    prev_edge: EdgeId,
-    next_edge: EdgeId,
+        let redge = Redge::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let (vs, fs) = redge.to_face_list();
+
+        ObjData::export(&(&vs, &fs), "out/tetrahedron.obj");
+
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/hedge_cube.obj");
+
+        let redge = Redge::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let (vs, fs) = redge.to_face_list();
+
+        ObjData::export(&(&vs, &fs), "out/hedge_cube.obj");
+    }
 }
