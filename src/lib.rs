@@ -99,7 +99,16 @@ where
                 } else {
                     edge_index_map.insert([cv1, cv2], edges_meta.len());
                     edges_meta.push(EdgeMetaData {
+                        id: EdgeId(edges_meta.len()),
                         vert_ids: [VertId(cv1), VertId(cv2)],
+                        v1_cycle: StarCycleNode {
+                            prev_edge: EdgeId(edges_meta.len()),
+                            next_edge: EdgeId(edges_meta.len()),
+                        },
+                        v2_cycle: StarCycleNode {
+                            prev_edge: EdgeId(edges_meta.len()),
+                            next_edge: EdgeId(edges_meta.len()),
+                        },
                         ..Default::default()
                     });
                     edges_meta.last_mut().unwrap()
@@ -167,7 +176,53 @@ where
                 link_loop_in_face(LoopId(i), loop_id, &mut loops_meta);
             }
         }
+
+        // 4. For each edge, associate it to its endpoints.
+        let mut vertex_edge_associations = vec![Vec::new(); verts_meta.len()];
+        for edge in edges_meta.iter() {
+            vertex_edge_associations[edge.vert_ids[0].to_index()].push((Endpoint::V1, edge.id));
+            vertex_edge_associations[edge.vert_ids[1].to_index()].push((Endpoint::V2, edge.id));
+        }
+
+        // 5. Create the edge cycles at the tips of each edge.
+        for (vert_index, incident_edges) in vertex_edge_associations.iter().enumerate() {
+            let vert_id = VertId(vert_index);
+            for i in 0..incident_edges.len() {
+                // Grab the two edges.
+                let (endpoint1, e1_id) = incident_edges[i];
+                let (endpoint2, e2_id) = incident_edges[(i + 1) % incident_edges.len()];
+                let (e1, e2) = get_disjoint(&mut edges_meta, e1_id.to_index(), e2_id.to_index());
+
+                // Get a handle to the correct cycle for each edge.
+                let cycle1 = match endpoint1 {
+                    Endpoint::V1 => &mut e1.v1_cycle,
+                    Endpoint::V2 => &mut e1.v2_cycle,
+                };
+                let cycle2 = match endpoint2 {
+                    Endpoint::V1 => &mut e2.v1_cycle,
+                    Endpoint::V2 => &mut e2.v2_cycle,
+                };
+
+                // Link the edge endpoint chain in the given order.
+                cycle1.next_edge = e2.id;
+                cycle2.prev_edge = e1.id;
+            }
+        }
     }
+}
+
+enum Endpoint {
+    V1,
+    V2,
+}
+
+#[inline]
+fn get_disjoint<'a, T>(x: &'a mut [T], a: usize, b: usize) -> (&'a mut T, &'a mut T) {
+    assert_ne!(a, b);
+    assert!(a < x.len());
+    assert!(b < x.len());
+    let ptr = x.as_mut_ptr();
+    (unsafe { &mut *ptr.add(a) }, unsafe { &mut *ptr.add(b) })
 }
 
 #[inline]
@@ -213,9 +268,9 @@ struct EdgeMetaData {
     /// Any loop on a face alongside this edge.
     loop_id: LoopId,
     /// Edges touching the v1 endpoint.
-    v1_edges: StarCycleNode,
+    v1_cycle: StarCycleNode,
     /// Edges touching the v2 endpoint.
-    v2_edges: StarCycleNode,
+    v2_cycle: StarCycleNode,
 }
 
 /// This is the radial part of the edge. It's part of the cycle of all the
@@ -249,6 +304,6 @@ struct FaceMetaData {
 
 #[derive(Default, Debug, Clone)]
 struct StarCycleNode {
-    prev_edege: EdgeId,
+    prev_edge: EdgeId,
     next_edge: EdgeId,
 }
