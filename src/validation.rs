@@ -3,7 +3,7 @@
 // to abstract meshes. These methods should work for those abstractions.
 // If we couple them to the objects it will be harder to do this.
 
-use super::*;
+use crate::{PrimitiveContainer, Redge};
 
 pub fn is_manifold<V, E, F>(mesh: &Redge<V, E, F>)
 where

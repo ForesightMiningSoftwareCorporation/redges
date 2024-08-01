@@ -1,7 +1,7 @@
-use hedge_handle::HedgeHandle;
-use vert_handle::VertHandle;
+use crate::hedge_handle::HedgeHandle;
+use crate::vert_handle::VertHandle;
 
-use crate::*;
+use crate::{EdgeId, EdgeMetaData, PrimitiveContainer, Redge, VertId};
 
 pub struct EdgeHandle<'r, V, E, F>
 where
