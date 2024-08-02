@@ -11,7 +11,7 @@ where
     F: PrimitiveContainer,
 {
     id: HedgeId,
-    redge: &'r mut Redge<V, E, F>,
+    redge: &'r Redge<V, E, F>,
 }
 
 impl<'r, V, E, F> HedgeHandle<'r, V, E, F>
@@ -20,7 +20,7 @@ where
     E: PrimitiveContainer,
     F: PrimitiveContainer,
 {
-    pub(crate) fn new(id: HedgeId, redge: &'r mut Redge<V, E, F>) -> Self {
+    pub(crate) fn new(id: HedgeId, redge: &'r Redge<V, E, F>) -> Self {
         debug_assert!(!id.is_absent());
         Self { id, redge }
     }

@@ -10,7 +10,7 @@ where
     F: PrimitiveContainer,
 {
     id: VertId,
-    redge: &'r mut Redge<V, E, F>,
+    redge: &'r Redge<V, E, F>,
 }
 
 impl<'r, V, E, F> VertHandle<'r, V, E, F>
@@ -19,7 +19,7 @@ where
     E: PrimitiveContainer,
     F: PrimitiveContainer,
 {
-    pub(crate) fn new(id: VertId, redge: &'r mut Redge<V, E, F>) -> Self {
+    pub(crate) fn new(id: VertId, redge: &'r Redge<V, E, F>) -> Self {
         debug_assert!(!id.is_absent());
         Self { id, redge }
     }
@@ -37,10 +37,6 @@ where
 
     pub fn data(&self) -> &V::PrimitiveData {
         self.redge.vert_data.get(self.id.to_index() as u64)
-    }
-
-    pub fn data_mut(&mut self) -> &mut V::PrimitiveData {
-        self.redge.vert_data.get_mut(self.id.to_index() as u64)
     }
 
     pub fn is_active(&self) -> bool {

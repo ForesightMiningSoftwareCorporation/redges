@@ -12,7 +12,7 @@ where
     current_edge: EdgeId,
     focused_vertex: VertId,
 
-    redge: &'r mut Redge<V, E, F>,
+    redge: &'r Redge<V, E, F>,
 }
 
 impl<'r, V, E, F> Iterator for VertexStarVerticesIter<'r, V, E, F>
@@ -47,7 +47,7 @@ where
     current_edge: EdgeId,
     focused_vertex: VertId,
 
-    redge: &'r mut Redge<V, E, F>,
+    redge: &'r Redge<V, E, F>,
 }
 
 impl<'r, V, E, F> Iterator for VertexStarEdgesIter<'r, V, E, F>

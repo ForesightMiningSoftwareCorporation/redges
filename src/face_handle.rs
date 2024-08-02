@@ -12,7 +12,7 @@ where
     F: PrimitiveContainer,
 {
     id: FaceId,
-    redge: &'r mut Redge<V, E, F>,
+    redge: &'r Redge<V, E, F>,
 }
 
 impl<'r, V, E, F> FaceHandle<'r, V, E, F>
@@ -21,7 +21,7 @@ where
     E: PrimitiveContainer,
     F: PrimitiveContainer,
 {
-    pub(crate) fn new(id: FaceId, redge: &'r mut Redge<V, E, F>) -> Self {
+    pub(crate) fn new(id: FaceId, redge: &'r Redge<V, E, F>) -> Self {
         debug_assert!(!id.is_absent());
         Self { id, redge }
     }
@@ -36,10 +36,6 @@ where
 
     pub fn data(&self) -> &F::PrimitiveData {
         self.redge.face_data.get(self.id.to_index() as u64)
-    }
-
-    pub fn data_mut(&mut self) -> &mut F::PrimitiveData {
-        self.redge.face_data.get_mut(self.id.to_index() as u64)
     }
 
     pub fn is_active(&self) -> bool {

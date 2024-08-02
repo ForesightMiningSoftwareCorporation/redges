@@ -10,7 +10,7 @@ where
     F: PrimitiveContainer,
 {
     id: EdgeId,
-    redge: &'r mut Redge<V, E, F>,
+    redge: &'r Redge<V, E, F>,
 }
 
 impl<'r, V, E, F> EdgeHandle<'r, V, E, F>
@@ -19,7 +19,7 @@ where
     E: PrimitiveContainer,
     F: PrimitiveContainer,
 {
-    pub(crate) fn new(id: EdgeId, redge: &'r mut Redge<V, E, F>) -> Self {
+    pub(crate) fn new(id: EdgeId, redge: &'r Redge<V, E, F>) -> Self {
         debug_assert!(!id.is_absent());
         Self { id, redge }
     }
@@ -46,10 +46,6 @@ where
 
     pub fn data(&self) -> &E::PrimitiveData {
         self.redge.edge_data.get(self.id.to_index() as u64)
-    }
-
-    pub fn data_mut(&mut self) -> &mut E::PrimitiveData {
-        self.redge.edge_data.get_mut(self.id.to_index() as u64)
     }
 
     pub fn is_active(&self) -> bool {

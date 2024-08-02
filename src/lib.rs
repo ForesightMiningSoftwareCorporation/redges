@@ -237,7 +237,7 @@ where
     }
 
     pub fn vert_handle<'r>(
-        &'r mut self,
+        &'r self,
         id: VertId,
     ) -> VertHandle<'r, VContainer, EContainer, FContainer> {
         assert!(id.to_index() < self.verts_meta.len());
@@ -245,7 +245,7 @@ where
     }
 
     pub fn edge_handle<'r>(
-        &'r mut self,
+        &'r self,
         id: EdgeId,
     ) -> EdgeHandle<'r, VContainer, EContainer, FContainer> {
         assert!(id.to_index() < self.edges_meta.len());
@@ -253,7 +253,7 @@ where
     }
 
     pub fn hedge_handle<'r>(
-        &'r mut self,
+        &'r self,
         id: HedgeId,
     ) -> HedgeHandle<'r, VContainer, EContainer, FContainer> {
         assert!(id.to_index() < self.hedges_meta.len());
@@ -261,7 +261,7 @@ where
     }
 
     pub fn face_handle<'r>(
-        &'r mut self,
+        &'r self,
         id: FaceId,
     ) -> FaceHandle<'r, VContainer, EContainer, FContainer> {
         assert!(id.to_index() < self.faces_meta.len());
