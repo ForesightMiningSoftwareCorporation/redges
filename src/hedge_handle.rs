@@ -38,31 +38,31 @@ where
     }
 
     pub fn edge(&self) -> EdgeHandle<'r, V, E, F> {
-        EdgeHandle::new(self.my_ref().edge_id, self.redge)
+        EdgeHandle::new(self.metadata().edge_id, self.redge)
     }
 
     pub fn radial_next(&self) -> Self {
-        HedgeHandle::new(self.my_ref().radial_next_id, self.redge)
+        HedgeHandle::new(self.metadata().radial_next_id, self.redge)
     }
 
     pub fn radial_prev(&self) -> Self {
-        HedgeHandle::new(self.my_ref().radial_prev_id, self.redge)
+        HedgeHandle::new(self.metadata().radial_prev_id, self.redge)
     }
 
     pub fn face_next(&self) -> Self {
-        HedgeHandle::new(self.my_ref().face_next_id, self.redge)
+        HedgeHandle::new(self.metadata().face_next_id, self.redge)
     }
 
     pub fn face_prev(&self) -> Self {
-        HedgeHandle::new(self.my_ref().face_prev_id, self.redge)
+        HedgeHandle::new(self.metadata().face_prev_id, self.redge)
     }
 
     pub fn face(&self) -> FaceHandle<'r, V, E, F> {
-        FaceHandle::new(self.my_ref().face_id, self.redge)
+        FaceHandle::new(self.metadata().face_id, self.redge)
     }
 
     pub fn is_active(&self) -> bool {
-        self.my_ref().is_active
+        self.metadata().is_active
     }
 
     fn metadata(&self) -> &HedgeMetaData {

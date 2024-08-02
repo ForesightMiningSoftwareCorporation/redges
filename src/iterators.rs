@@ -116,6 +116,7 @@ where
 {
     start_hedge: HedgeId,
     current_hedge: HedgeId,
+    start: bool,
 
     redge: &'r Redge<V, E, F>,
 }
@@ -130,6 +131,7 @@ where
         Self {
             start_hedge: hedge,
             current_hedge: hedge,
+            start: true,
             redge,
         }
     }
@@ -144,14 +146,14 @@ where
     type Item = HedgeHandle<'r, V, E, F>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let hedge_handle = self.redge.hedge_handle(self.current_hedge);
-        let id = hedge_handle.id();
-        let next_radial_hedge = hedge_handle.radial_next();
-        if next_radial_hedge.id() == self.start_hedge {
+        if self.current_hedge == self.start_hedge && !self.start {
             return None;
         }
 
-        self.current_hedge = next_radial_hedge.id();
+        self.start = false;
+        let hedge_handle = self.redge.hedge_handle(self.current_hedge);
+        let id = self.current_hedge;
+        self.current_hedge = hedge_handle.radial_next().id();
 
         Some(HedgeHandle::new(id, self.redge))
     }

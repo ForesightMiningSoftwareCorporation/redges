@@ -68,6 +68,8 @@ where
     EContainer: PrimitiveContainer,
     FContainer: PrimitiveContainer,
 {
+    // Very delicate function, it needs to create all the invariants for the Redge. Avoid modifying
+    // if possible because debugging this is a nightmare. Seriously.
     pub fn new(
         vert_data: VContainer,
         edge_data: EContainer,
@@ -153,16 +155,21 @@ where
                 });
 
                 active_face.hedge_id = hedge_id;
+                edge.hedge_id = hedge_id;
             }
         }
 
-        // 3. Enforce that there are no singleton radial hedges.
+        // 3. Create radial cycles for the hedges.
         for i in 0..hedges_meta.len() {
-            // If a hedge has no other elements in its cycle, we will make a new hedge
-            // in the opposite direction and add it to the cycle.
+            let edge = &edges_meta[hedges_meta[i].edge_id.to_index()];
+            // This is the active hedhe in the edges radial cycle, no need to mutate it direcctly.
+            if edge.hedge_id == hedges_meta[i].id {
+                continue;
+            }
+            // A hedge pointing to itself denotes that it has not been included in its cycle.
             if hedges_meta[i].radial_next_id == hedges_meta[i].radial_prev_id {
                 // The prev and next should only ever be equal if they point to
-                // the same hedge.
+                // the current hedge.
                 debug_assert!(
                     hedges_meta[i].radial_next_id == hedges_meta[i].id,
                     "Singleton hedge is incorrect, next_id {:?}, id {:?}",
@@ -172,27 +179,28 @@ where
 
                 let edge_id = hedges_meta[i].edge_id;
                 debug_assert!(!edge_id.is_absent());
-                let source_id = hedges_meta[i].source_id;
-                debug_assert!(!source_id.is_absent());
 
-                // The source of the pair is the destination of the current
-                // hedge.
-                let [v1, v2] = edges_meta[edge_id.to_index()].vert_ids;
-                let dest = if source_id == v1 { v2 } else { v1 };
+                debug_assert!(!edge_id.is_absent());
+                let hedge_id = edges_meta[edge_id.to_index()].hedge_id;
+                let next_id = hedges_meta[hedge_id.to_index()].radial_next_id;
+                debug_assert!(hedge_id != hedges_meta[i].id);
 
-                let hedge_id = HedgeId(hedges_meta.len());
-                hedges_meta.push(HedgeMetaData {
-                    id: hedge_id,
-                    source_id: dest,
-                    is_active: true,
-                    ..Default::default()
-                });
+                // Insert current edge into the radial loop.
+                if next_id == hedge_id {
+                    // Special case for when there's only one edge in the cycle.
+                    hedges_meta[hedge_id.to_index()].radial_next_id = hedges_meta[i].id;
+                    hedges_meta[hedge_id.to_index()].radial_prev_id = hedges_meta[i].id;
 
-                attach_hedge_to_edge(
-                    &mut edges_meta[edge_id.to_index()],
-                    hedge_id,
-                    &mut hedges_meta,
-                );
+                    hedges_meta[i].radial_next_id = hedges_meta[hedge_id.to_index()].id;
+                    hedges_meta[i].radial_prev_id = hedges_meta[hedge_id.to_index()].id;
+                } else {
+                    // General logic.
+                    hedges_meta[hedge_id.to_index()].radial_next_id = hedges_meta[i].id;
+                    hedges_meta[i].radial_prev_id = hedge_id;
+
+                    hedges_meta[next_id.to_index()].radial_prev_id = hedges_meta[i].id;
+                    hedges_meta[i].radial_next_id = next_id;
+                }
             }
         }
 
@@ -334,17 +342,22 @@ struct EdgeMetaData {
 /// its orientation.
 #[derive(Default, Debug, Clone)]
 struct HedgeMetaData {
+    /// Unique identfier for the hedge.
     id: HedgeId,
+    /// Vertex from which this hedge starts at.
     source_id: VertId,
+    /// Edge that is parallel to this hedge and which is contained by the face
+    /// of this hedge.
     edge_id: EdgeId,
     /// Next hedge in the parallel cycle around the edge.
     radial_next_id: HedgeId,
     /// Prev hedge in the parallel cycle around the edge.
     radial_prev_id: HedgeId,
-    /// Next hedge in the face.
+    /// Next hedge in the face loop.
     face_next_id: HedgeId,
-    /// Prev hedge in the face.
+    /// Prev hedge in the face loop.
     face_prev_id: HedgeId,
+    /// The face that contains this hedge.
     face_id: FaceId,
     /// Whether this element is being used (set to false on removal).
     is_active: bool,
@@ -364,8 +377,8 @@ pub struct StarCycleNode {
     next_edge: EdgeId,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Endpoint {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Endpoint {
     V1,
     V2,
 }
@@ -379,38 +392,9 @@ fn get_disjoint<'a, T>(x: &'a mut [T], a: usize, b: usize) -> (&'a mut T, &'a mu
     (unsafe { &mut *ptr.add(a) }, unsafe { &mut *ptr.add(b) })
 }
 
-#[inline]
-fn attach_hedge_to_edge(
-    edge_meta: &mut EdgeMetaData,
-    new_hedge_id: HedgeId,
-    hedges: &mut Vec<HedgeMetaData>,
-) {
-    if edge_meta.hedge_id.is_absent() {
-        edge_meta.hedge_id = new_hedge_id;
-        hedges[new_hedge_id.to_index()].radial_next_id = new_hedge_id;
-        hedges[new_hedge_id.to_index()].radial_prev_id = new_hedge_id;
-    } else {
-        insert_hedge_in_cycle(edge_meta.hedge_id, new_hedge_id, hedges);
-    }
-}
-/// Insert `new` into the doubly linked list containing `old_id` between `old_id` and its next.
-#[inline]
-fn insert_hedge_in_cycle(old_id: HedgeId, new_id: HedgeId, hedges: &mut Vec<HedgeMetaData>) {
-    let old_next_id = hedges[old_id.to_index()].radial_next_id;
-
-    link_hedge_in_face(old_id, new_id, hedges);
-    link_hedge_in_face(new_id, old_next_id, hedges);
-}
-
-#[inline]
-fn link_hedge_in_face(prev_id: HedgeId, next_id: HedgeId, hedges: &mut Vec<HedgeMetaData>) {
-    hedges[prev_id.to_index()].face_next_id = next_id;
-    hedges[next_id.to_index()].face_prev_id = prev_id;
-}
-
 #[cfg(test)]
 mod tests {
-    use validation::{manfiold_state, RedgeManifoldness};
+    use validation::{manifold_state, RedgeManifoldness};
     use wavefront_loader::ObjData;
 
     use super::*;
@@ -432,7 +416,7 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let manifold_state = manfiold_state(&redge);
+        let manifold_state = manifold_state(&redge);
         debug_assert!(
             manifold_state == RedgeManifoldness::IsManifold,
             "{:?}",
@@ -440,14 +424,13 @@ mod tests {
         );
 
         let (vs, fs) = redge.to_face_list();
-
         ObjData::export(&(&vs, &fs), "out/tetrahedron.obj");
 
         let ObjData {
             vertices,
             vertex_face_indices,
             ..
-        } = ObjData::from_disk_file("assets/hedge_cube.obj");
+        } = ObjData::from_disk_file("assets/loop_cube.obj");
 
         let redge = Redge::new(
             vertices,
@@ -460,6 +443,6 @@ mod tests {
 
         let (vs, fs) = redge.to_face_list();
 
-        ObjData::export(&(&vs, &fs), "out/hedge_cube.obj");
+        ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
     }
 }

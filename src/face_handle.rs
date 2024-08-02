@@ -31,7 +31,7 @@ where
     }
 
     pub fn hedge(&self) -> HedgeHandle<'r, V, E, F> {
-        HedgeHandle::new(self.my_ref().hedge_id, self.redge)
+        HedgeHandle::new(self.metadata().hedge_id, self.redge)
     }
 
     pub fn data(&self) -> &F::PrimitiveData {
@@ -39,10 +39,10 @@ where
     }
 
     pub fn is_active(&self) -> bool {
-        self.my_ref().is_active
+        self.metadata().is_active
     }
 
-    fn my_ref(&self) -> &FaceMetaData {
+    fn metadata(&self) -> &FaceMetaData {
         &self.redge.faces_meta[self.id.to_index()]
     }
 }

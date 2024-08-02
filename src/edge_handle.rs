@@ -25,7 +25,7 @@ where
     }
 
     pub fn vertex_ids(&self) -> [VertId; 2] {
-        self.my_ref().vert_ids
+        self.metadata().vert_ids
     }
 
     pub fn id(&self) -> EdgeId {
@@ -33,15 +33,15 @@ where
     }
 
     pub fn v0(&self) -> VertHandle<'r, V, E, F> {
-        VertHandle::new(self.my_ref().vert_ids[0], self.redge)
+        VertHandle::new(self.metadata().vert_ids[0], self.redge)
     }
 
     pub fn v1(&self) -> VertHandle<'r, V, E, F> {
-        VertHandle::new(self.my_ref().vert_ids[1], self.redge)
+        VertHandle::new(self.metadata().vert_ids[1], self.redge)
     }
 
     pub fn hedge(&self) -> HedgeHandle<'r, V, E, F> {
-        HedgeHandle::new(self.my_ref().hedge_id, self.redge)
+        HedgeHandle::new(self.metadata().hedge_id, self.redge)
     }
 
     pub fn data(&self) -> &E::PrimitiveData {
@@ -49,15 +49,15 @@ where
     }
 
     pub fn is_active(&self) -> bool {
-        self.my_ref().is_active
+        self.metadata().is_active
     }
 
-    fn my_ref(&self) -> &EdgeMetaData {
+    fn metadata(&self) -> &EdgeMetaData {
         &self.redge.edges_meta[self.id.to_index()]
     }
 
     pub fn vertex_endpoint(&self, vert_id: VertId) -> EdgeVertexType {
-        let [v1, v2] = self.my_ref().vert_ids;
+        let [v1, v2] = self.metadata().vert_ids;
         let v1_idx = v1.to_index();
         let v2_idx = v2.to_index();
 
@@ -70,16 +70,16 @@ where
 
     pub fn opposite(&self, vert_id: VertId) -> VertId {
         match self.vertex_endpoint(vert_id) {
-            EdgeVertexType::V1 => self.my_ref().vert_ids[0],
-            EdgeVertexType::V2 => self.my_ref().vert_ids[1],
+            EdgeVertexType::V1 => self.metadata().vert_ids[0],
+            EdgeVertexType::V2 => self.metadata().vert_ids[1],
             EdgeVertexType::NotInEdge => panic!("Vertex id not part of this edge"),
         }
     }
 
     pub fn edge_cycle_at(&self, vert_id: VertId) -> StarCycleNode {
         match self.vertex_endpoint(vert_id) {
-            EdgeVertexType::V1 => self.my_ref().v1_cycle.clone(),
-            EdgeVertexType::V2 => self.my_ref().v2_cycle.clone(),
+            EdgeVertexType::V1 => self.metadata().v1_cycle.clone(),
+            EdgeVertexType::V2 => self.metadata().v2_cycle.clone(),
             EdgeVertexType::NotInEdge => panic!("Vertex id not part of this edge"),
         }
     }
