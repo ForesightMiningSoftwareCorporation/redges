@@ -64,7 +64,7 @@ where
         self.my_ref().is_active
     }
 
-    fn my_ref(&self) -> &HedgeMetaData {
+    fn metadata(&self) -> &HedgeMetaData {
         &self.redge.hedges_meta[self.id.to_index()]
     }
 }
