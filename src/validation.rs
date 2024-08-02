@@ -1,4 +1,4 @@
-// The functions defined here should remain functions, don't refactor them to method.
+// The functions defined here should remain functions, don't refactor them to methods.
 // The reason is that, we will likely want to implement trait interfaces
 // to abstract meshes. These methods should work for those abstractions.
 // If we couple them to the objects it will be harder to do this.
@@ -7,7 +7,7 @@ use crate::{edge_handle, hedge_handle, EdgeId, PrimitiveContainer, Redge};
 
 // TODO: For each function in this file there will be missing checks, add them as
 // needed until they are entirely trustworthy.
-
+#[derive(Debug, PartialEq, Eq)]
 pub enum RedgeCorrectness {
     Correct,
     MismatchingArrayLengths,
@@ -25,9 +25,9 @@ where
 {
     if mesh.vert_data.len() != mesh.verts_meta.len() {
         return RedgeCorrectness::MismatchingArrayLengths;
-    } else if mesh.edge_data.len() != mesh.edges_meta.len() {
+    } else if mesh.edge_data.len() != mesh.edges_meta.len() && mesh.edge_data.len() != 0 {
         return RedgeCorrectness::MismatchingArrayLengths;
-    } else if mesh.face_data.len() != mesh.faces_meta.len() {
+    } else if mesh.face_data.len() != mesh.faces_meta.len() && mesh.face_data.len() != 0 {
         return RedgeCorrectness::MismatchingArrayLengths;
     }
 
@@ -134,9 +134,12 @@ where
     RedgeCorrectness::Correct
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum RedgeManifoldness {
     IsManifold,
     IsIncorrect(RedgeCorrectness),
+    IsolatedVertex(usize),
+    NonManifoldEdge(usize),
 }
 
 pub fn is_manifold<V, E, F>(mesh: &Redge<V, E, F>) -> RedgeManifoldness
@@ -148,6 +151,21 @@ where
     match is_correct(mesh) {
         RedgeCorrectness::Correct => {}
         x => return RedgeManifoldness::IsIncorrect(x),
+    }
+
+    for (i, vert) in mesh.verts_meta.iter().enumerate() {
+        if vert.edge_id.is_absent() {
+            return RedgeManifoldness::IsolatedVertex(i);
+        }
+    }
+
+    for (i, hedge) in mesh.hedges_meta.iter().enumerate() {
+        let hedge_handle = mesh.hedge_handle(hedge.id);
+
+        let radial_neighbours: Vec<_> = hedge_handle.radial_neighbours().collect();
+        if radial_neighbours.len() != 1 && radial_neighbours.len() != 2 {
+            return RedgeManifoldness::NonManifoldEdge(i);
+        }
     }
 
     RedgeManifoldness::IsManifold

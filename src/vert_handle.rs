@@ -28,7 +28,7 @@ where
         self.id
     }
 
-    pub fn edge(self) -> EdgeHandle<'r, V, E, F> {
+    pub fn edge(&self) -> EdgeHandle<'r, V, E, F> {
         EdgeHandle::new(
             self.redge.verts_meta[self.id.to_index()].edge_id,
             self.redge,

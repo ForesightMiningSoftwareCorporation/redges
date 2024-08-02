@@ -1,3 +1,6 @@
+// TODO: For all handles and iterators that can panic, add a fallible API
+// warapper that won't crash.
+
 use std::collections::BTreeMap;
 
 pub mod container_trait;
@@ -407,6 +410,7 @@ fn link_hedge_in_face(prev_id: HedgeId, next_id: HedgeId, hedges: &mut Vec<Hedge
 
 #[cfg(test)]
 mod tests {
+    use validation::{manfiold_state, RedgeManifoldness};
     use wavefront_loader::ObjData;
 
     use super::*;
@@ -426,6 +430,13 @@ mod tests {
             vertex_face_indices
                 .iter()
                 .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let manifold_state = manfiold_state(&redge);
+        debug_assert!(
+            manifold_state == RedgeManifoldness::IsManifold,
+            "{:?}",
+            manifold_state
         );
 
         let (vs, fs) = redge.to_face_list();

@@ -32,15 +32,15 @@ where
         self.id
     }
 
-    pub fn v0(self) -> VertHandle<'r, V, E, F> {
+    pub fn v0(&self) -> VertHandle<'r, V, E, F> {
         VertHandle::new(self.my_ref().vert_ids[0], self.redge)
     }
 
-    pub fn v1(self) -> VertHandle<'r, V, E, F> {
+    pub fn v1(&self) -> VertHandle<'r, V, E, F> {
         VertHandle::new(self.my_ref().vert_ids[1], self.redge)
     }
 
-    pub fn hedge(self) -> HedgeHandle<'r, V, E, F> {
+    pub fn hedge(&self) -> HedgeHandle<'r, V, E, F> {
         HedgeHandle::new(self.my_ref().hedge_id, self.redge)
     }
 

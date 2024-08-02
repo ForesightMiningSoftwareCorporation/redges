@@ -1,5 +1,6 @@
 use crate::edge_handle::EdgeHandle;
 use crate::face_handle::FaceHandle;
+use crate::iterators::RadialHedgeIter;
 use crate::vert_handle::VertHandle;
 
 use crate::{EdgeId, EdgeMetaData, HedgeId, HedgeMetaData, PrimitiveContainer, Redge};
@@ -29,34 +30,34 @@ where
         self.id
     }
 
-    pub fn source(self) -> VertHandle<'r, V, E, F> {
+    pub fn source(&self) -> VertHandle<'r, V, E, F> {
         VertHandle::new(
             self.redge.hedges_meta[self.id.to_index()].source_id,
             self.redge,
         )
     }
 
-    pub fn edge(self) -> EdgeHandle<'r, V, E, F> {
+    pub fn edge(&self) -> EdgeHandle<'r, V, E, F> {
         EdgeHandle::new(self.my_ref().edge_id, self.redge)
     }
 
-    pub fn radial_next(self) -> Self {
+    pub fn radial_next(&self) -> Self {
         HedgeHandle::new(self.my_ref().radial_next_id, self.redge)
     }
 
-    pub fn radial_prev(self) -> Self {
+    pub fn radial_prev(&self) -> Self {
         HedgeHandle::new(self.my_ref().radial_prev_id, self.redge)
     }
 
-    pub fn face_next(self) -> Self {
+    pub fn face_next(&self) -> Self {
         HedgeHandle::new(self.my_ref().face_next_id, self.redge)
     }
 
-    pub fn face_prev(self) -> Self {
+    pub fn face_prev(&self) -> Self {
         HedgeHandle::new(self.my_ref().face_prev_id, self.redge)
     }
 
-    pub fn face(self) -> FaceHandle<'r, V, E, F> {
+    pub fn face(&self) -> FaceHandle<'r, V, E, F> {
         FaceHandle::new(self.my_ref().face_id, self.redge)
     }
 
@@ -66,5 +67,9 @@ where
 
     fn metadata(&self) -> &HedgeMetaData {
         &self.redge.hedges_meta[self.id.to_index()]
+    }
+
+    pub fn radial_neighbours(&'r self) -> RadialHedgeIter<'r, V, E, F> {
+        RadialHedgeIter::new(self.id(), self.redge)
     }
 }

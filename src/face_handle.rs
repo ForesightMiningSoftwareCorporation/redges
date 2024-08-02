@@ -30,7 +30,7 @@ where
         self.id
     }
 
-    pub fn hedge(self) -> HedgeHandle<'r, V, E, F> {
+    pub fn hedge(&self) -> HedgeHandle<'r, V, E, F> {
         HedgeHandle::new(self.my_ref().hedge_id, self.redge)
     }
 

@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use crate::{edge_handle, vert_handle::VertHandle, EdgeId, PrimitiveContainer, Redge, VertId};
+use crate::{
+    edge_handle::EdgeHandle, hedge_handle::HedgeHandle, vert_handle::VertHandle, EdgeId, HedgeId,
+    PrimitiveContainer, Redge, VertId,
+};
 
 pub struct VertexStarVerticesIter<'r, V, E, F>
 where
@@ -21,7 +24,7 @@ where
     E: PrimitiveContainer,
     F: PrimitiveContainer,
 {
-    type Item = VertId;
+    type Item = VertHandle<'r, V, E, F>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let edge = self.redge.edge_handle(self.current_edge);
@@ -33,7 +36,10 @@ where
 
         self.current_edge = edge_cycle.next_edge;
 
-        Some(edge.opposite(self.focused_vertex))
+        Some(VertHandle::new(
+            edge.opposite(self.focused_vertex),
+            self.redge,
+        ))
     }
 }
 
@@ -56,7 +62,7 @@ where
     E: PrimitiveContainer,
     F: PrimitiveContainer,
 {
-    type Item = EdgeId;
+    type Item = EdgeHandle<'r, V, E, F>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let edge = self.redge.edge_handle(self.current_edge);
@@ -68,7 +74,7 @@ where
 
         self.current_edge = edge_cycle.next_edge;
 
-        Some(edge.id())
+        Some(EdgeHandle::new(edge.id(), self.redge))
     }
 }
 
@@ -87,17 +93,66 @@ where
     E: PrimitiveContainer,
     F: PrimitiveContainer,
 {
-    type Item = EdgeId;
+    type Item = EdgeHandle<'r, V, E, F>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let edge = self.edge_iter.next();
 
         match edge {
-            Some(edge_id) => {
-                let edge_handle = self.edge_iter.redge.edge_handle(edge_id);
-                Some(edge_handle.hedge().face_next().edge().id())
-            }
+            Some(edge_handle) => Some(EdgeHandle::new(
+                edge_handle.hedge().face_next().edge().id(),
+                self.edge_iter.redge,
+            )),
             None => None,
         }
+    }
+}
+
+pub struct RadialHedgeIter<'r, V, E, F>
+where
+    V: PrimitiveContainer,
+    E: PrimitiveContainer,
+    F: PrimitiveContainer,
+{
+    start_hedge: HedgeId,
+    current_hedge: HedgeId,
+
+    redge: &'r Redge<V, E, F>,
+}
+
+impl<'r, V, E, F> RadialHedgeIter<'r, V, E, F>
+where
+    V: PrimitiveContainer,
+    E: PrimitiveContainer,
+    F: PrimitiveContainer,
+{
+    pub(crate) fn new(hedge: HedgeId, redge: &'r Redge<V, E, F>) -> Self {
+        Self {
+            start_hedge: hedge,
+            current_hedge: hedge,
+            redge,
+        }
+    }
+}
+
+impl<'r, V, E, F> Iterator for RadialHedgeIter<'r, V, E, F>
+where
+    V: PrimitiveContainer,
+    E: PrimitiveContainer,
+    F: PrimitiveContainer,
+{
+    type Item = HedgeHandle<'r, V, E, F>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let hedge_handle = self.redge.hedge_handle(self.current_hedge);
+        let id = hedge_handle.id();
+        let next_radial_hedge = hedge_handle.radial_next();
+        if next_radial_hedge.id() == self.start_hedge {
+            return None;
+        }
+
+        self.current_hedge = next_radial_hedge.id();
+
+        Some(HedgeHandle::new(id, self.redge))
     }
 }
