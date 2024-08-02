@@ -1,7 +1,7 @@
 use crate::hedge_handle::HedgeHandle;
 use crate::vert_handle::VertHandle;
 
-use crate::{EdgeId, EdgeMetaData, PrimitiveContainer, Redge, VertId};
+use crate::{EdgeId, EdgeMetaData, PrimitiveContainer, Redge, StarCycleNode, VertId};
 
 pub struct EdgeHandle<'r, V, E, F>
 where
@@ -52,7 +52,45 @@ where
         self.redge.edge_data.get_mut(self.id.to_index() as u64)
     }
 
+    pub fn is_active(&self) -> bool {
+        self.my_ref().is_active
+    }
+
     fn my_ref(&self) -> &EdgeMetaData {
         &self.redge.edges_meta[self.id.to_index()]
     }
+
+    pub fn vertex_endpoint(&self, vert_id: VertId) -> EdgeVertexType {
+        let [v1, v2] = self.my_ref().vert_ids;
+        let v1_idx = v1.to_index();
+        let v2_idx = v2.to_index();
+
+        match vert_id.to_index() {
+            v1_idx => EdgeVertexType::V1,
+            v2_idx => EdgeVertexType::V2,
+            _ => EdgeVertexType::NotInEdge,
+        }
+    }
+
+    pub fn opposite(&self, vert_id: VertId) -> VertId {
+        match self.vertex_endpoint(vert_id) {
+            EdgeVertexType::V1 => self.my_ref().vert_ids[0],
+            EdgeVertexType::V2 => self.my_ref().vert_ids[1],
+            EdgeVertexType::NotInEdge => panic!("Vertex id not part of this edge"),
+        }
+    }
+
+    pub fn edge_cycle_at(&self, vert_id: VertId) -> StarCycleNode {
+        match self.vertex_endpoint(vert_id) {
+            EdgeVertexType::V1 => self.my_ref().v1_cycle.clone(),
+            EdgeVertexType::V2 => self.my_ref().v2_cycle.clone(),
+            EdgeVertexType::NotInEdge => panic!("Vertex id not part of this edge"),
+        }
+    }
+}
+
+pub enum EdgeVertexType {
+    V1,
+    V2,
+    NotInEdge,
 }

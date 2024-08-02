@@ -42,6 +42,10 @@ where
         self.redge.face_data.get_mut(self.id.to_index() as u64)
     }
 
+    pub fn is_active(&self) -> bool {
+        self.my_ref().is_active
+    }
+
     fn my_ref(&self) -> &FaceMetaData {
         &self.redge.faces_meta[self.id.to_index()]
     }

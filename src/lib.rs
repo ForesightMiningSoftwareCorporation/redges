@@ -8,6 +8,10 @@ pub mod iterators;
 pub mod validation;
 pub mod vert_handle;
 use container_trait::PrimitiveContainer;
+use edge_handle::EdgeHandle;
+use face_handle::FaceHandle;
+use hedge_handle::HedgeHandle;
+use vert_handle::VertHandle;
 mod wavefront_loader;
 
 macro_rules! define_id_struct {
@@ -73,6 +77,7 @@ where
             .map(|i| VertMetaData {
                 id: VertId(i),
                 edge_id: EdgeId(ABSENT),
+                is_active: true,
             })
             .collect::<Vec<_>>();
         let mut edges_meta = Vec::new();
@@ -85,6 +90,7 @@ where
             let face_index = faces_meta.len();
             faces_meta.push(FaceMetaData {
                 id: FaceId(faces_meta.len()),
+                is_active: true,
                 ..Default::default()
             });
             let active_face = faces_meta.last_mut().unwrap();
@@ -115,6 +121,7 @@ where
                             prev_edge: EdgeId(edges_meta.len()),
                             next_edge: EdgeId(edges_meta.len()),
                         },
+                        is_active: true,
                         ..Default::default()
                     });
                     edges_meta.last_mut().unwrap()
@@ -138,6 +145,7 @@ where
                     face_prev_id: HedgeId(
                         hedge_cutoff + ((i + face_vertices.len() - 1) % face_vertices.len()),
                     ),
+                    is_active: true,
                     ..Default::default()
                 });
 
@@ -173,6 +181,7 @@ where
                 hedges_meta.push(HedgeMetaData {
                     id: hedge_id,
                     source_id: dest,
+                    is_active: true,
                     ..Default::default()
                 });
 
@@ -227,6 +236,38 @@ where
         }
     }
 
+    pub fn vert_handle<'r>(
+        &'r mut self,
+        id: VertId,
+    ) -> VertHandle<'r, VContainer, EContainer, FContainer> {
+        assert!(id.to_index() < self.verts_meta.len());
+        VertHandle::new(id, self)
+    }
+
+    pub fn edge_handle<'r>(
+        &'r mut self,
+        id: EdgeId,
+    ) -> EdgeHandle<'r, VContainer, EContainer, FContainer> {
+        assert!(id.to_index() < self.edges_meta.len());
+        EdgeHandle::new(id, self)
+    }
+
+    pub fn hedge_handle<'r>(
+        &'r mut self,
+        id: HedgeId,
+    ) -> HedgeHandle<'r, VContainer, EContainer, FContainer> {
+        assert!(id.to_index() < self.hedges_meta.len());
+        HedgeHandle::new(id, self)
+    }
+
+    pub fn face_handle<'r>(
+        &'r mut self,
+        id: FaceId,
+    ) -> FaceHandle<'r, VContainer, EContainer, FContainer> {
+        assert!(id.to_index() < self.faces_meta.len());
+        FaceHandle::new(id, self)
+    }
+
     pub fn to_face_list(&self) -> (Vec<VContainer::PrimitiveData>, Vec<Vec<usize>>) {
         let verts = self.vert_data.iterate().cloned().collect();
         let mut faces = Vec::with_capacity(self.faces_meta.len());
@@ -263,6 +304,8 @@ struct VertMetaData {
     id: VertId,
     /// Points to any edge that touches this vertex.
     edge_id: EdgeId,
+    /// Whether this element is being used (set to false on removal).
+    is_active: bool,
 }
 #[derive(Default, Debug, Clone)]
 struct EdgeMetaData {
@@ -275,6 +318,8 @@ struct EdgeMetaData {
     v1_cycle: StarCycleNode,
     /// Edges touching the v2 endpoint.
     v2_cycle: StarCycleNode,
+    /// Whether this element is being used (set to false on removal).
+    is_active: bool,
 }
 
 /// This is the radial part of the edge. It's part of the cycle of all the
@@ -298,16 +343,20 @@ struct HedgeMetaData {
     /// Prev hedge in the face.
     face_prev_id: HedgeId,
     face_id: FaceId,
+    /// Whether this element is being used (set to false on removal).
+    is_active: bool,
 }
 
 #[derive(Default, Debug, Clone)]
 struct FaceMetaData {
     id: FaceId,
     hedge_id: HedgeId,
+    /// Whether this element is being used (set to false on removal).
+    is_active: bool,
 }
 
 #[derive(Default, Debug, Clone)]
-struct StarCycleNode {
+pub struct StarCycleNode {
     prev_edge: EdgeId,
     next_edge: EdgeId,
 }

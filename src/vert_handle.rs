@@ -43,6 +43,10 @@ where
         self.redge.vert_data.get_mut(self.id.to_index() as u64)
     }
 
+    pub fn is_active(&self) -> bool {
+        self.my_ref().is_active
+    }
+
     fn my_ref(&self) -> &VertMetaData {
         &self.redge.verts_meta[self.id.to_index()]
     }

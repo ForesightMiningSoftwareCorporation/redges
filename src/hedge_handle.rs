@@ -60,6 +60,10 @@ where
         FaceHandle::new(self.my_ref().face_id, self.redge)
     }
 
+    pub fn is_active(&self) -> bool {
+        self.my_ref().is_active
+    }
+
     fn my_ref(&self) -> &HedgeMetaData {
         &self.redge.hedges_meta[self.id.to_index()]
     }
