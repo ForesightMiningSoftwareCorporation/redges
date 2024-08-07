@@ -1,27 +1,19 @@
+use container_trait::{FaceData, RedgeContainers};
+
 use crate::hedge_handle::HedgeHandle;
 use crate::vert_handle::VertHandle;
 
-use crate::{EdgeId, EdgeMetaData, PrimitiveContainer, Redge, VertId};
+use crate::{container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, Redge, VertId};
 
 use crate::*;
 
-pub struct FaceHandle<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
+pub struct FaceHandle<'r, R: RedgeContainers> {
     id: FaceId,
-    redge: &'r Redge<V, E, F>,
+    redge: &'r Redge<R>,
 }
 
-impl<'r, V, E, F> FaceHandle<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    pub(crate) fn new(id: FaceId, redge: &'r Redge<V, E, F>) -> Self {
+impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
+    pub(crate) fn new(id: FaceId, redge: &'r Redge<R>) -> Self {
         debug_assert!(!id.is_absent());
         Self { id, redge }
     }
@@ -30,11 +22,11 @@ where
         self.id
     }
 
-    pub fn hedge(&self) -> HedgeHandle<'r, V, E, F> {
+    pub fn hedge(&self) -> HedgeHandle<'r, R> {
         HedgeHandle::new(self.metadata().hedge_id, self.redge)
     }
 
-    pub fn data(&self) -> &F::PrimitiveData {
+    pub fn data(&self) -> &FaceData<R::FaceContainer> {
         self.redge.face_data.get(self.id.to_index() as u64)
     }
 

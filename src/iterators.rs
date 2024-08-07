@@ -1,30 +1,20 @@
 use std::marker::PhantomData;
 
 use crate::{
-    edge_handle::EdgeHandle, hedge_handle::HedgeHandle, vert_handle::VertHandle, EdgeId, HedgeId,
-    PrimitiveContainer, Redge, VertId,
+    container_trait::PrimitiveContainer, container_trait::RedgeContainers, edge_handle::EdgeHandle,
+    hedge_handle::HedgeHandle, vert_handle::VertHandle, EdgeId, HedgeId, Redge, VertId,
 };
 
-pub struct VertexStarVerticesIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
+pub struct VertexStarVerticesIter<'r, R: RedgeContainers> {
     start_edge: EdgeId,
     current_edge: EdgeId,
     focused_vertex: VertId,
 
-    redge: &'r Redge<V, E, F>,
+    redge: &'r Redge<R>,
 }
 
-impl<'r, V, E, F> Iterator for VertexStarVerticesIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    type Item = VertHandle<'r, V, E, F>;
+impl<'r, R: RedgeContainers> Iterator for VertexStarVerticesIter<'r, R> {
+    type Item = VertHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let edge = self.redge.edge_handle(self.current_edge);
@@ -43,26 +33,16 @@ where
     }
 }
 
-pub struct VertexStarEdgesIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
+pub struct VertexStarEdgesIter<'r, R: RedgeContainers> {
     start_edge: EdgeId,
     current_edge: EdgeId,
     focused_vertex: VertId,
 
-    redge: &'r Redge<V, E, F>,
+    redge: &'r Redge<R>,
 }
 
-impl<'r, V, E, F> Iterator for VertexStarEdgesIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    type Item = EdgeHandle<'r, V, E, F>;
+impl<'r, R: RedgeContainers> Iterator for VertexStarEdgesIter<'r, R> {
+    type Item = EdgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let edge = self.redge.edge_handle(self.current_edge);
@@ -78,22 +58,12 @@ where
     }
 }
 
-pub struct VertexLinkEdgesIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    edge_iter: VertexStarEdgesIter<'r, V, E, F>,
+pub struct VertexLinkEdgesIter<'r, R: RedgeContainers> {
+    edge_iter: VertexStarEdgesIter<'r, R>,
 }
 
-impl<'r, V, E, F> Iterator for VertexLinkEdgesIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    type Item = EdgeHandle<'r, V, E, F>;
+impl<'r, R: RedgeContainers> Iterator for VertexLinkEdgesIter<'r, R> {
+    type Item = EdgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let edge = self.edge_iter.next();
@@ -108,26 +78,16 @@ where
     }
 }
 
-pub struct RadialHedgeIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
+pub struct RadialHedgeIter<'r, R: RedgeContainers> {
     start_hedge: HedgeId,
     current_hedge: HedgeId,
     start: bool,
 
-    redge: &'r Redge<V, E, F>,
+    redge: &'r Redge<R>,
 }
 
-impl<'r, V, E, F> RadialHedgeIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    pub(crate) fn new(hedge: HedgeId, redge: &'r Redge<V, E, F>) -> Self {
+impl<'r, R: RedgeContainers> RadialHedgeIter<'r, R> {
+    pub(crate) fn new(hedge: HedgeId, redge: &'r Redge<R>) -> Self {
         Self {
             start_hedge: hedge,
             current_hedge: hedge,
@@ -137,13 +97,8 @@ where
     }
 }
 
-impl<'r, V, E, F> Iterator for RadialHedgeIter<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    type Item = HedgeHandle<'r, V, E, F>;
+impl<'r, R: RedgeContainers> Iterator for RadialHedgeIter<'r, R> {
+    type Item = HedgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_hedge == self.start_hedge && !self.start {

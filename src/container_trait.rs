@@ -89,3 +89,24 @@ impl PrimitiveContainer for () {
         0
     }
 }
+
+pub trait RedgeContainers {
+    type VertContainer: PrimitiveContainer;
+    type EdgeContainer: PrimitiveContainer;
+    type FaceContainer: PrimitiveContainer;
+}
+
+pub type VertData<R> = <R as PrimitiveContainer>::PrimitiveData;
+pub type EdgeData<R> = <R as PrimitiveContainer>::PrimitiveData;
+pub type FaceData<R> = <R as PrimitiveContainer>::PrimitiveData;
+
+impl<V, E, F> RedgeContainers for (V, E, F)
+where
+    V: PrimitiveContainer,
+    E: PrimitiveContainer,
+    F: PrimitiveContainer,
+{
+    type VertContainer = V;
+    type EdgeContainer = E;
+    type FaceContainer = F;
+}

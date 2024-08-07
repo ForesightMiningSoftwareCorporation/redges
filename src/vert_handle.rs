@@ -1,25 +1,16 @@
+use crate::container_trait::{RedgeContainers, VertData};
 use crate::edge_handle::EdgeHandle;
 use crate::hedge_handle::HedgeHandle;
 
-use crate::{EdgeId, PrimitiveContainer, Redge, VertId, VertMetaData};
+use crate::{container_trait::PrimitiveContainer, EdgeId, Redge, VertId, VertMetaData};
 
-pub struct VertHandle<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
+pub struct VertHandle<'r, R: RedgeContainers> {
     id: VertId,
-    redge: &'r Redge<V, E, F>,
+    redge: &'r Redge<R>,
 }
 
-impl<'r, V, E, F> VertHandle<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    pub(crate) fn new(id: VertId, redge: &'r Redge<V, E, F>) -> Self {
+impl<'r, R: RedgeContainers> VertHandle<'r, R> {
+    pub(crate) fn new(id: VertId, redge: &'r Redge<R>) -> Self {
         debug_assert!(!id.is_absent());
         Self { id, redge }
     }
@@ -28,14 +19,14 @@ where
         self.id
     }
 
-    pub fn edge(&self) -> EdgeHandle<'r, V, E, F> {
+    pub fn edge(&self) -> EdgeHandle<'r, R> {
         EdgeHandle::new(
             self.redge.verts_meta[self.id.to_index()].edge_id,
             self.redge,
         )
     }
 
-    pub fn data(&self) -> &V::PrimitiveData {
+    pub fn data(&self) -> &VertData<R::VertContainer> {
         self.redge.vert_data.get(self.id.to_index() as u64)
     }
 
