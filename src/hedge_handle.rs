@@ -1,27 +1,20 @@
+use crate::container_trait::RedgeContainers;
 use crate::edge_handle::EdgeHandle;
 use crate::face_handle::FaceHandle;
 use crate::iterators::RadialHedgeIter;
 use crate::vert_handle::VertHandle;
 
-use crate::{EdgeId, EdgeMetaData, HedgeId, HedgeMetaData, PrimitiveContainer, Redge};
+use crate::{
+    container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, HedgeId, HedgeMetaData, Redge,
+};
 
-pub struct HedgeHandle<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
+pub struct HedgeHandle<'r, R: RedgeContainers> {
     id: HedgeId,
-    redge: &'r Redge<V, E, F>,
+    redge: &'r Redge<R>,
 }
 
-impl<'r, V, E, F> HedgeHandle<'r, V, E, F>
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
-    pub(crate) fn new(id: HedgeId, redge: &'r Redge<V, E, F>) -> Self {
+impl<'r, R: RedgeContainers> HedgeHandle<'r, R> {
+    pub(crate) fn new(id: HedgeId, redge: &'r Redge<R>) -> Self {
         debug_assert!(!id.is_absent());
         Self { id, redge }
     }
@@ -30,14 +23,14 @@ where
         self.id
     }
 
-    pub fn source(&self) -> VertHandle<'r, V, E, F> {
+    pub fn source(&self) -> VertHandle<'r, R> {
         VertHandle::new(
             self.redge.hedges_meta[self.id.to_index()].source_id,
             self.redge,
         )
     }
 
-    pub fn edge(&self) -> EdgeHandle<'r, V, E, F> {
+    pub fn edge(&self) -> EdgeHandle<'r, R> {
         EdgeHandle::new(self.metadata().edge_id, self.redge)
     }
 
@@ -57,7 +50,7 @@ where
         HedgeHandle::new(self.metadata().face_prev_id, self.redge)
     }
 
-    pub fn face(&self) -> FaceHandle<'r, V, E, F> {
+    pub fn face(&self) -> FaceHandle<'r, R> {
         FaceHandle::new(self.metadata().face_id, self.redge)
     }
 
@@ -69,7 +62,7 @@ where
         &self.redge.hedges_meta[self.id.to_index()]
     }
 
-    pub fn radial_neighbours(&'r self) -> RadialHedgeIter<'r, V, E, F> {
+    pub fn radial_neighbours(&'r self) -> RadialHedgeIter<'r, R> {
         RadialHedgeIter::new(self.id(), self.redge)
     }
 }

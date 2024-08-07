@@ -3,7 +3,10 @@
 // to abstract meshes. These methods should work for those abstractions.
 // If we couple them to the objects it will be harder to do this.
 
-use crate::{edge_handle, hedge_handle, EdgeId, Endpoint, HedgeId, PrimitiveContainer, Redge};
+use crate::{
+    container_trait::PrimitiveContainer, container_trait::RedgeContainers, edge_handle,
+    hedge_handle, EdgeId, Endpoint, HedgeId, Redge,
+};
 
 // TODO: For each function in this file there will be missing checks, add them as
 // needed until they are entirely trustworthy.
@@ -40,14 +43,9 @@ pub enum HedgeCorrectness {
 }
 
 /// If this returns `Correct` then it is safe to create handles.
-// If the above condition is found to be false ping Camilo and tell him
+// If the above condition is found to be false ping Makogan and tell him
 // to fix asap.
-pub fn is_correct<V, E, F>(mesh: &Redge<V, E, F>) -> RedgeCorrectness
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
+pub fn is_correct<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectness {
     if mesh.vert_data.len() != mesh.verts_meta.len() {
         return RedgeCorrectness::MismatchingArrayLengths;
     } else if mesh.edge_data.len() != mesh.edges_meta.len() && mesh.edge_data.len() != 0 {
@@ -184,12 +182,7 @@ pub enum EdgeManifoldness {
     BrokenRadialLoop,
 }
 
-pub fn manifold_state<V, E, F>(mesh: &Redge<V, E, F>) -> RedgeManifoldness
-where
-    V: PrimitiveContainer,
-    E: PrimitiveContainer,
-    F: PrimitiveContainer,
-{
+pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness {
     match is_correct(mesh) {
         RedgeCorrectness::Correct => {}
         x => return RedgeManifoldness::IsIncorrect(x),

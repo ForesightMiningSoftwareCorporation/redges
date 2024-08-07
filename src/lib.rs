@@ -10,7 +10,7 @@ pub mod hedge_handle;
 pub mod iterators;
 pub mod validation;
 pub mod vert_handle;
-use container_trait::PrimitiveContainer;
+use container_trait::{PrimitiveContainer, RedgeContainers, VertData};
 use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
 use hedge_handle::HedgeHandle;
@@ -46,15 +46,10 @@ define_id_struct!(EdgeId);
 define_id_struct!(HedgeId);
 define_id_struct!(FaceId);
 
-pub struct Redge<VContainer, EContainer, FContainer>
-where
-    VContainer: PrimitiveContainer,
-    EContainer: PrimitiveContainer,
-    FContainer: PrimitiveContainer,
-{
-    vert_data: VContainer,
-    edge_data: EContainer,
-    face_data: FContainer,
+pub struct Redge<C: RedgeContainers> {
+    vert_data: C::VertContainer,
+    edge_data: C::EdgeContainer,
+    face_data: C::FaceContainer,
 
     verts_meta: Vec<VertMetaData>,
     edges_meta: Vec<EdgeMetaData>,
@@ -62,18 +57,11 @@ where
     faces_meta: Vec<FaceMetaData>,
 }
 
-impl<VContainer, EContainer, FContainer> Redge<VContainer, EContainer, FContainer>
-where
-    VContainer: PrimitiveContainer,
-    EContainer: PrimitiveContainer,
-    FContainer: PrimitiveContainer,
-{
-    // Very delicate function, it needs to create all the invariants for the Redge. Avoid modifying
-    // if possible because debugging this is a nightmare. Seriously.
+impl<C: RedgeContainers> Redge<C> {
     pub fn new(
-        vert_data: VContainer,
-        edge_data: EContainer,
-        face_data: FContainer,
+        vert_data: C::VertContainer,
+        edge_data: C::EdgeContainer,
+        face_data: C::FaceContainer,
         faces: impl Iterator<Item = impl Iterator<Item = usize>>,
     ) -> Self {
         // 1. Initialize the setup structures.
@@ -247,39 +235,27 @@ where
         }
     }
 
-    pub fn vert_handle<'r>(
-        &'r self,
-        id: VertId,
-    ) -> VertHandle<'r, VContainer, EContainer, FContainer> {
+    pub fn vert_handle<'r>(&'r self, id: VertId) -> VertHandle<'r, C> {
         assert!(id.to_index() < self.verts_meta.len());
         VertHandle::new(id, self)
     }
 
-    pub fn edge_handle<'r>(
-        &'r self,
-        id: EdgeId,
-    ) -> EdgeHandle<'r, VContainer, EContainer, FContainer> {
+    pub fn edge_handle<'r>(&'r self, id: EdgeId) -> EdgeHandle<'r, C> {
         assert!(id.to_index() < self.edges_meta.len());
         EdgeHandle::new(id, self)
     }
 
-    pub fn hedge_handle<'r>(
-        &'r self,
-        id: HedgeId,
-    ) -> HedgeHandle<'r, VContainer, EContainer, FContainer> {
+    pub fn hedge_handle<'r>(&'r self, id: HedgeId) -> HedgeHandle<'r, C> {
         assert!(id.to_index() < self.hedges_meta.len());
         HedgeHandle::new(id, self)
     }
 
-    pub fn face_handle<'r>(
-        &'r self,
-        id: FaceId,
-    ) -> FaceHandle<'r, VContainer, EContainer, FContainer> {
+    pub fn face_handle<'r>(&'r self, id: FaceId) -> FaceHandle<'r, C> {
         assert!(id.to_index() < self.faces_meta.len());
         FaceHandle::new(id, self)
     }
 
-    pub fn to_face_list(&self) -> (Vec<VContainer::PrimitiveData>, Vec<Vec<usize>>) {
+    pub fn to_face_list(&self) -> (Vec<VertData<C::VertContainer>>, Vec<Vec<usize>>) {
         let verts = self.vert_data.iterate().cloned().collect();
         let mut faces = Vec::with_capacity(self.faces_meta.len());
 
@@ -407,7 +383,7 @@ mod tests {
             ..
         } = ObjData::from_disk_file("assets/tetrahedron.obj");
 
-        let redge = Redge::new(
+        let redge = Redge::<(_, _, _)>::new(
             vertices,
             (),
             (),
@@ -416,12 +392,8 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let manifold_state = manifold_state(&redge);
-        debug_assert!(
-            manifold_state == RedgeManifoldness::IsManifold,
-            "{:?}",
-            manifold_state
-        );
+        let state = manifold_state(&redge);
+        debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
 
         let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/tetrahedron.obj");
@@ -432,7 +404,7 @@ mod tests {
             ..
         } = ObjData::from_disk_file("assets/loop_cube.obj");
 
-        let redge = Redge::new(
+        let redge = Redge::<(_, _, _)>::new(
             vertices,
             (),
             (),
@@ -441,8 +413,10 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let (vs, fs) = redge.to_face_list();
+        let state = manifold_state(&redge);
+        debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
 
+        let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
     }
 }
