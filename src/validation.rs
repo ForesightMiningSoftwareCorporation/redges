@@ -206,8 +206,7 @@ pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness 
         }
 
         let radial_neighbours: Vec<_> = hedge_handle.radial_neighbours().collect();
-        if radial_neighbours.len() != 2 {
-            println!("{} {}", radial_neighbours.len(), i);
+        if radial_neighbours.len() != 2 && radial_neighbours.len() != 1 {
             return RedgeManifoldness::NonManifoldEdge(i, EdgeManifoldness::BrokenRadialLoop);
         }
 

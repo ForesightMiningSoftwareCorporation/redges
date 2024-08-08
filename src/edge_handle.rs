@@ -25,11 +25,11 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         self.id
     }
 
-    pub fn v0(&self) -> VertHandle<'r, R> {
+    pub fn v1(&self) -> VertHandle<'r, R> {
         VertHandle::new(self.metadata().vert_ids[0], self.redge)
     }
 
-    pub fn v1(&self) -> VertHandle<'r, R> {
+    pub fn v2(&self) -> VertHandle<'r, R> {
         VertHandle::new(self.metadata().vert_ids[1], self.redge)
     }
 
@@ -75,6 +75,14 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
             EdgeVertexType::V2 => self.metadata().v2_cycle.clone(),
             EdgeVertexType::NotInEdge => panic!("Vertex id not part of this edge"),
         }
+    }
+
+    pub(crate) fn vertex_cycle_pointers_v1(&self) -> StarCycleNode {
+        self.metadata().v1_cycle.clone()
+    }
+
+    pub(crate) fn vertex_cycle_pointers_v2(&self) -> StarCycleNode {
+        self.metadata().v2_cycle.clone()
     }
 }
 

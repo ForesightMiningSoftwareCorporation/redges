@@ -7,7 +7,9 @@ pub mod container_trait;
 pub mod edge_handle;
 pub mod face_handle;
 pub mod hedge_handle;
+pub mod helpers;
 pub mod iterators;
+pub mod mesh_deleter;
 pub mod validation;
 pub mod vert_handle;
 use container_trait::{PrimitiveContainer, RedgeContainers, VertData};
@@ -34,6 +36,10 @@ macro_rules! define_id_struct {
 
             pub fn to_index(&self) -> usize {
                 self.0
+            }
+
+            pub fn new_absent() -> Self {
+                Self(ABSENT)
             }
         }
     };
@@ -297,7 +303,8 @@ struct VertMetaData {
 #[derive(Default, Debug, Clone)]
 struct EdgeMetaData {
     id: EdgeId,
-    /// The two endpoints of the edge.
+    /// The two endpoints of the edge. It is an invariant that
+    /// they are sorted by their id.
     vert_ids: [VertId; 2],
     /// Any hedge on a face alongside this edge.
     hedge_id: HedgeId,
@@ -307,6 +314,48 @@ struct EdgeMetaData {
     v2_cycle: StarCycleNode,
     /// Whether this element is being used (set to false on removal).
     is_active: bool,
+}
+
+impl EdgeMetaData {
+    pub(crate) fn cycle(&self, vert_id: VertId) -> StarCycleNode {
+        if vert_id == self.vert_ids[0] {
+            return self.v1_cycle.clone();
+        } else if vert_id == self.vert_ids[1] {
+            return self.v2_cycle.clone();
+        } else {
+            panic!()
+        }
+    }
+
+    pub(crate) fn cycle_mut(&mut self, vert_id: VertId) -> &mut StarCycleNode {
+        if vert_id == self.vert_ids[0] {
+            return &mut self.v1_cycle;
+        } else if vert_id == self.vert_ids[1] {
+            return &mut self.v2_cycle;
+        } else {
+            panic!()
+        }
+    }
+
+    pub(crate) fn opposite(&self, vert_id: VertId) -> VertId {
+        if vert_id == self.vert_ids[0] {
+            return self.vert_ids[1];
+        } else if vert_id == self.vert_ids[1] {
+            return self.vert_ids[0];
+        } else {
+            panic!()
+        }
+    }
+
+    pub(crate) fn local_index(&self, vert_id: VertId) -> usize {
+        if vert_id == self.vert_ids[0] {
+            return 0;
+        } else if vert_id == self.vert_ids[1] {
+            return 1;
+        } else {
+            panic!()
+        }
+    }
 }
 
 /// This is the radial part of the edge. It's part of the cycle of all the
@@ -418,5 +467,98 @@ mod tests {
 
         let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
+
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/non_manifold_tet.obj");
+
+        let redge = Redge::<(_, _, _)>::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let state = manifold_state(&redge);
+        debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/non_manifold_tet.obj");
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
+
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/triangle.obj");
+
+        let redge = Redge::<(_, _, _)>::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let state = manifold_state(&redge);
+        debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/triangle.obj");
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
+
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/triforce.obj");
+
+        let redge = Redge::<(_, _, _)>::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let state = manifold_state(&redge);
+        debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/triforce.obj");
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
+
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/triple_triangle.obj");
+
+        let redge = Redge::<(_, _, _)>::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let state = manifold_state(&redge);
+        debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/triple_triangle.obj");
     }
 }

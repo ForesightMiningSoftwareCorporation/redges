@@ -13,6 +13,17 @@ pub struct VertexStarVerticesIter<'r, R: RedgeContainers> {
     redge: &'r Redge<R>,
 }
 
+impl<'r, R: RedgeContainers> VertexStarVerticesIter<'r, R> {
+    pub(crate) fn new(vert_id: VertId, redge: &'r Redge<R>) -> Self {
+        VertexStarVerticesIter {
+            focused_vertex: vert_id,
+            start_edge: redge.verts_meta[vert_id.to_index()].edge_id,
+            current_edge: redge.verts_meta[vert_id.to_index()].edge_id,
+            redge: redge,
+        }
+    }
+}
+
 impl<'r, R: RedgeContainers> Iterator for VertexStarVerticesIter<'r, R> {
     type Item = VertHandle<'r, R>;
 
@@ -39,6 +50,17 @@ pub struct VertexStarEdgesIter<'r, R: RedgeContainers> {
     focused_vertex: VertId,
 
     redge: &'r Redge<R>,
+}
+
+impl<'r, R: RedgeContainers> VertexStarEdgesIter<'r, R> {
+    pub(crate) fn new(vert_id: VertId, redge: &'r Redge<R>) -> Self {
+        VertexStarEdgesIter {
+            focused_vertex: vert_id,
+            start_edge: redge.verts_meta[vert_id.to_index()].edge_id,
+            current_edge: redge.verts_meta[vert_id.to_index()].edge_id,
+            redge: redge,
+        }
+    }
 }
 
 impl<'r, R: RedgeContainers> Iterator for VertexStarEdgesIter<'r, R> {

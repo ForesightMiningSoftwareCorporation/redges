@@ -2,6 +2,7 @@ use crate::container_trait::{RedgeContainers, VertData};
 use crate::edge_handle::EdgeHandle;
 use crate::hedge_handle::HedgeHandle;
 
+use crate::iterators::{VertexStarEdgesIter, VertexStarVerticesIter};
 use crate::{container_trait::PrimitiveContainer, EdgeId, Redge, VertId, VertMetaData};
 
 pub struct VertHandle<'r, R: RedgeContainers> {
@@ -31,10 +32,18 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
     }
 
     pub fn is_active(&self) -> bool {
-        self.my_ref().is_active
+        self.metadata().is_active
     }
 
-    fn my_ref(&self) -> &VertMetaData {
+    fn metadata(&self) -> &VertMetaData {
         &self.redge.verts_meta[self.id.to_index()]
+    }
+
+    pub fn iter_neighbours(&self) -> VertexStarVerticesIter<'r, R> {
+        VertexStarVerticesIter::new(self.id, self.redge)
+    }
+
+    pub fn iter_star_edges(&self) -> VertexStarEdgesIter<'r, R> {
+        VertexStarEdgesIter::new(self.id, self.redge)
     }
 }
