@@ -3,9 +3,13 @@
 // to abstract meshes. These methods should work for those abstractions.
 // If we couple them to the objects it will be harder to do this.
 
+use std::collections::{BTreeSet, HashSet};
+
 use crate::{
-    container_trait::PrimitiveContainer, container_trait::RedgeContainers, edge_handle,
-    hedge_handle, EdgeId, Endpoint, HedgeId, Redge,
+    container_trait::{PrimitiveContainer, RedgeContainers},
+    edge_handle, hedge_handle,
+    helpers::count_edge_vertex_cycles,
+    EdgeId, Endpoint, HedgeId, Redge,
 };
 
 // TODO: For each function in this file there will be missing checks, add them as
@@ -26,10 +30,10 @@ pub enum EdgeCorrectness {
     EdgeIsAbsent,
     IdAndIndexMismatch,
     AbsentEndpoint(Endpoint),
+    CyclePointsToAbsent(Endpoint),
     CycleIsBroken(Endpoint),
     EdgeWithOnlyOnePoint,
     InvalidHedgePointer(HedgeId),
-    HedgePointerMissing,
     HedgePointsToDifferentEdge,
 }
 
@@ -85,9 +89,6 @@ pub fn is_correct<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectness {
         if edge.id.to_index() != i {
             return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::IdAndIndexMismatch);
         }
-        if edge.hedge_id.is_absent() {
-            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::IdAndIndexMismatch);
-        }
         if edge.vert_ids[0].is_absent() {
             return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::AbsentEndpoint(Endpoint::V1));
         }
@@ -95,33 +96,81 @@ pub fn is_correct<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectness {
             return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::AbsentEndpoint(Endpoint::V2));
         }
         if edge.v1_cycle.prev_edge.is_absent() {
-            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V1));
+            return RedgeCorrectness::InvalidEdge(
+                i,
+                EdgeCorrectness::CyclePointsToAbsent(Endpoint::V1),
+            );
         }
         if edge.v1_cycle.next_edge.is_absent() {
-            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V1));
+            return RedgeCorrectness::InvalidEdge(
+                i,
+                EdgeCorrectness::CyclePointsToAbsent(Endpoint::V1),
+            );
         }
         if edge.v2_cycle.prev_edge.is_absent() {
-            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V2));
+            return RedgeCorrectness::InvalidEdge(
+                i,
+                EdgeCorrectness::CyclePointsToAbsent(Endpoint::V2),
+            );
         }
         if edge.v2_cycle.next_edge.is_absent() {
-            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V2));
+            return RedgeCorrectness::InvalidEdge(
+                i,
+                EdgeCorrectness::CyclePointsToAbsent(Endpoint::V2),
+            );
         }
         if edge.vert_ids[0] == edge.vert_ids[1] {
             return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::EdgeWithOnlyOnePoint);
         }
-        if edge.hedge_id.to_index() >= mesh.hedges_meta.len() {
+        if edge.hedge_id.to_index() >= mesh.hedges_meta.len() && !edge.hedge_id.is_absent() {
             return RedgeCorrectness::InvalidEdge(
                 i,
                 EdgeCorrectness::InvalidHedgePointer(edge.hedge_id),
             );
         }
 
-        let hedge_meta = &mesh.hedges_meta[edge.hedge_id.to_index()];
-        if hedge_meta.edge_id.is_absent() {
-            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::HedgePointerMissing);
+        if edge.hedge_id != HedgeId::new_absent() {
+            let hedge_meta = &mesh.hedges_meta[edge.hedge_id.to_index()];
+            if hedge_meta.edge_id != edge.id {
+                return RedgeCorrectness::InvalidEdge(
+                    i,
+                    EdgeCorrectness::HedgePointsToDifferentEdge,
+                );
+            }
         }
-        if hedge_meta.edge_id != edge.id {
-            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::HedgePointsToDifferentEdge);
+
+        let next_edge_v1 = &mesh.edges_meta[edge.v1_cycle.next_edge.to_index()];
+        let prev_edge_v1 = &mesh.edges_meta[edge.v1_cycle.prev_edge.to_index()];
+        let next_edge_v2 = &mesh.edges_meta[edge.v2_cycle.next_edge.to_index()];
+        let prev_edge_v2 = &mesh.edges_meta[edge.v2_cycle.prev_edge.to_index()];
+
+        let [v1, v2] = edge.vert_ids;
+        if next_edge_v1.vert_ids[0] != v1 && next_edge_v1.vert_ids[1] != v1 {
+            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V1));
+        }
+
+        if prev_edge_v1.vert_ids[0] != v1 && prev_edge_v1.vert_ids[1] != v1 {
+            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V1));
+        }
+
+        if next_edge_v2.vert_ids[0] != v2 && next_edge_v2.vert_ids[1] != v2 {
+            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V2));
+        }
+
+        if prev_edge_v2.vert_ids[0] != v2 && prev_edge_v2.vert_ids[1] != v2 {
+            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V2));
+        }
+
+        if next_edge_v1.cycle(edge.vert_ids[0]).prev_edge != edge.id
+            || prev_edge_v1.cycle(edge.vert_ids[0]).next_edge != edge.id
+        {
+            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V1));
+        }
+
+        if next_edge_v2.cycle(edge.vert_ids[1]).prev_edge != edge.id
+            || prev_edge_v2.cycle(edge.vert_ids[1]).next_edge != edge.id
+        {
+            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::CycleIsBroken(Endpoint::V2));
         }
     }
 
@@ -171,13 +220,13 @@ pub enum RedgeManifoldness {
     IsIncorrect(RedgeCorrectness),
     IsolatedVertex(usize),
     NonManifoldEdge(usize, EdgeManifoldness),
+    VertexAssociatedWithMultipleCycles,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EdgeManifoldness {
     Manifold,
     SelfReferentialFaceCycle,
-    SelfReferentialRadialCycle,
     BrokenFaceLoop,
     BrokenRadialLoop,
 }
@@ -188,22 +237,22 @@ pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness 
         x => return RedgeManifoldness::IsIncorrect(x),
     }
     for (i, vert) in mesh.verts_meta.iter().enumerate() {
+        if !vert.is_active {
+            continue;
+        }
         if vert.edge_id.is_absent() {
             return RedgeManifoldness::IsolatedVertex(i);
         }
     }
 
     for (i, hedge) in mesh.hedges_meta.iter().enumerate() {
-        let hedge_handle = mesh.hedge_handle(hedge.id);
-
-        if hedge_handle.radial_next().id() == hedge_handle.id()
-            || hedge_handle.radial_prev().id() == hedge_handle.id()
-        {
-            return RedgeManifoldness::NonManifoldEdge(
-                i,
-                EdgeManifoldness::SelfReferentialRadialCycle,
-            );
+        if !hedge.is_active {
+            continue;
         }
+
+        debug_assert!(hedge.id != HedgeId::new_absent());
+
+        let hedge_handle = mesh.hedge_handle(hedge.id);
 
         let radial_neighbours: Vec<_> = hedge_handle.radial_neighbours().collect();
         if radial_neighbours.len() != 2 && radial_neighbours.len() != 1 {
@@ -221,6 +270,14 @@ pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness 
 
         if hedge_handle.face_prev().id() == hedge_handle.face_next().id() {
             return RedgeManifoldness::NonManifoldEdge(i, EdgeManifoldness::BrokenFaceLoop);
+        }
+    }
+
+    // Each vertex should belong to no more than 1 cycle.
+    let cycle_counts = count_edge_vertex_cycles(mesh);
+    for count in cycle_counts {
+        if count > 1 {
+            return RedgeManifoldness::VertexAssociatedWithMultipleCycles;
         }
     }
 

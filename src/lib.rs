@@ -16,12 +16,13 @@ use container_trait::{PrimitiveContainer, RedgeContainers, VertData};
 use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
 use hedge_handle::HedgeHandle;
+use validation::{is_correct, RedgeCorrectness};
 use vert_handle::VertHandle;
 mod wavefront_loader;
 
 macro_rules! define_id_struct {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
         pub struct $name(usize);
         impl Default for $name {
             fn default() -> Self {
@@ -156,7 +157,7 @@ impl<C: RedgeContainers> Redge<C> {
         // 3. Create radial cycles for the hedges.
         for i in 0..hedges_meta.len() {
             let edge = &edges_meta[hedges_meta[i].edge_id.to_index()];
-            // This is the active hedhe in the edges radial cycle, no need to mutate it direcctly.
+            // This is the active hedge in the edges radial cycle, no need to mutate it directly.
             if edge.hedge_id == hedges_meta[i].id {
                 continue;
             }
@@ -201,36 +202,25 @@ impl<C: RedgeContainers> Redge<C> {
         // 4. For each edge, associate it to its endpoints.
         let mut vertex_edge_associations = vec![Vec::new(); verts_meta.len()];
         for edge in edges_meta.iter() {
-            vertex_edge_associations[edge.vert_ids[0].to_index()].push((Endpoint::V1, edge.id));
-            vertex_edge_associations[edge.vert_ids[1].to_index()].push((Endpoint::V2, edge.id));
+            vertex_edge_associations[edge.vert_ids[0].to_index()].push(edge.id);
+            vertex_edge_associations[edge.vert_ids[1].to_index()].push(edge.id);
         }
 
         // 5. Create the edge cycles at the tips of each edge.
         for (vert_index, incident_edges) in vertex_edge_associations.iter().enumerate() {
-            let vert_id = VertId(vert_index);
             for i in 0..incident_edges.len() {
                 // Grab the two edges.
-                let (endpoint1, e1_id) = incident_edges[i];
-                let (endpoint2, e2_id) = incident_edges[(i + 1) % incident_edges.len()];
-                let (e1, e2) = get_disjoint(&mut edges_meta, e1_id.to_index(), e2_id.to_index());
+                let e1_id = incident_edges[i];
+                let e2_id = incident_edges[(i + 1) % incident_edges.len()];
 
-                // Get a handle to the correct cycle for each edge.
-                let cycle1 = match endpoint1 {
-                    Endpoint::V1 => &mut e1.v1_cycle,
-                    Endpoint::V2 => &mut e1.v2_cycle,
-                };
-                let cycle2 = match endpoint2 {
-                    Endpoint::V1 => &mut e2.v1_cycle,
-                    Endpoint::V2 => &mut e2.v2_cycle,
-                };
+                let vert_id = VertId(vert_index);
 
-                // Link the edge endpoint chain in the given order.
-                cycle1.next_edge = e2.id;
-                cycle2.prev_edge = e1.id;
+                edges_meta[e1_id.to_index()].cycle_mut(vert_id).next_edge = e2_id;
+                edges_meta[e2_id.to_index()].cycle_mut(vert_id).prev_edge = e1_id;
             }
         }
 
-        Self {
+        let mesh = Self {
             vert_data,
             edge_data,
             face_data,
@@ -238,7 +228,11 @@ impl<C: RedgeContainers> Redge<C> {
             edges_meta,
             hedges_meta,
             faces_meta,
-        }
+        };
+
+        let state = is_correct(&mesh);
+        debug_assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+        mesh
     }
 
     pub fn vert_handle<'r>(&'r self, id: VertId) -> VertHandle<'r, C> {
@@ -318,12 +312,16 @@ struct EdgeMetaData {
 
 impl EdgeMetaData {
     pub(crate) fn cycle(&self, vert_id: VertId) -> StarCycleNode {
+        debug_assert!(self.is_active);
         if vert_id == self.vert_ids[0] {
             return self.v1_cycle.clone();
         } else if vert_id == self.vert_ids[1] {
             return self.v2_cycle.clone();
         } else {
-            panic!()
+            panic!(
+                "Requested vert {:?} in edge ({:?}, {:?})",
+                vert_id, self.vert_ids[0], self.vert_ids[1],
+            )
         }
     }
 
@@ -337,23 +335,23 @@ impl EdgeMetaData {
         }
     }
 
-    pub(crate) fn opposite(&self, vert_id: VertId) -> VertId {
+    pub(crate) fn opposite(&mut self, vert_id: VertId) -> &mut VertId {
         if vert_id == self.vert_ids[0] {
-            return self.vert_ids[1];
+            return &mut self.vert_ids[1];
         } else if vert_id == self.vert_ids[1] {
-            return self.vert_ids[0];
+            return &mut self.vert_ids[0];
         } else {
             panic!()
         }
     }
 
-    pub(crate) fn local_index(&self, vert_id: VertId) -> usize {
+    pub(crate) fn at(&mut self, vert_id: VertId) -> &mut VertId {
         if vert_id == self.vert_ids[0] {
-            return 0;
+            return &mut self.vert_ids[0];
         } else if vert_id == self.vert_ids[1] {
-            return 1;
+            return &mut self.vert_ids[1];
         } else {
-            panic!()
+            panic!("{:?}", vert_id)
         }
     }
 }
@@ -489,9 +487,6 @@ mod tests {
         let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/non_manifold_tet.obj");
 
-        let (vs, fs) = redge.to_face_list();
-        ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
-
         let ObjData {
             vertices,
             vertex_face_indices,
@@ -513,9 +508,6 @@ mod tests {
         let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/triangle.obj");
 
-        let (vs, fs) = redge.to_face_list();
-        ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
-
         let ObjData {
             vertices,
             vertex_face_indices,
@@ -536,9 +528,6 @@ mod tests {
 
         let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/triforce.obj");
-
-        let (vs, fs) = redge.to_face_list();
-        ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
 
         let ObjData {
             vertices,

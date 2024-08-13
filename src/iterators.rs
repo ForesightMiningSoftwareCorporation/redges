@@ -48,6 +48,7 @@ pub struct VertexStarEdgesIter<'r, R: RedgeContainers> {
     start_edge: EdgeId,
     current_edge: EdgeId,
     focused_vertex: VertId,
+    start: bool,
 
     redge: &'r Redge<R>,
 }
@@ -59,6 +60,7 @@ impl<'r, R: RedgeContainers> VertexStarEdgesIter<'r, R> {
             start_edge: redge.verts_meta[vert_id.to_index()].edge_id,
             current_edge: redge.verts_meta[vert_id.to_index()].edge_id,
             redge: redge,
+            start: true,
         }
     }
 }
@@ -70,8 +72,12 @@ impl<'r, R: RedgeContainers> Iterator for VertexStarEdgesIter<'r, R> {
         let edge = self.redge.edge_handle(self.current_edge);
         let edge_cycle = edge.edge_cycle_at(self.focused_vertex);
 
-        if edge_cycle.next_edge == self.start_edge {
-            return None;
+        if self.current_edge == self.start_edge {
+            if !self.start {
+                return None;
+            } else {
+                self.start = false;
+            }
         }
 
         self.current_edge = edge_cycle.next_edge;
@@ -123,6 +129,7 @@ impl<'r, R: RedgeContainers> Iterator for RadialHedgeIter<'r, R> {
     type Item = HedgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        debug_assert!(self.current_hedge != HedgeId::new_absent());
         if self.current_hedge == self.start_hedge && !self.start {
             return None;
         }
@@ -131,6 +138,42 @@ impl<'r, R: RedgeContainers> Iterator for RadialHedgeIter<'r, R> {
         let hedge_handle = self.redge.hedge_handle(self.current_hedge);
         let id = self.current_hedge;
         self.current_hedge = hedge_handle.radial_next().id();
+
+        Some(HedgeHandle::new(id, self.redge))
+    }
+}
+
+pub struct FaceLoopHedgeIter<'r, R: RedgeContainers> {
+    start_hedge: HedgeId,
+    current_hedge: HedgeId,
+    start: bool,
+
+    redge: &'r Redge<R>,
+}
+
+impl<'r, R: RedgeContainers> FaceLoopHedgeIter<'r, R> {
+    pub(crate) fn new(hedge: HedgeId, redge: &'r Redge<R>) -> Self {
+        Self {
+            start_hedge: hedge,
+            current_hedge: hedge,
+            start: true,
+            redge,
+        }
+    }
+}
+
+impl<'r, R: RedgeContainers> Iterator for FaceLoopHedgeIter<'r, R> {
+    type Item = HedgeHandle<'r, R>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_hedge == self.start_hedge && !self.start {
+            return None;
+        }
+
+        self.start = false;
+        let hedge_handle = self.redge.hedge_handle(self.current_hedge);
+        let id = self.current_hedge;
+        self.current_hedge = hedge_handle.face_next().id();
 
         Some(HedgeHandle::new(id, self.redge))
     }

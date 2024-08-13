@@ -54,10 +54,13 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         let v1_idx = v1.to_index();
         let v2_idx = v2.to_index();
 
-        match vert_id.to_index() {
-            v1_idx => EdgeVertexType::V1,
-            v2_idx => EdgeVertexType::V2,
-            _ => EdgeVertexType::NotInEdge,
+        let index = vert_id.to_index();
+        if index == v1_idx {
+            EdgeVertexType::V1
+        } else if index == v2_idx {
+            EdgeVertexType::V2
+        } else {
+            EdgeVertexType::NotInEdge
         }
     }
 

@@ -39,11 +39,11 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
         &self.redge.verts_meta[self.id.to_index()]
     }
 
-    pub fn iter_neighbours(&self) -> VertexStarVerticesIter<'r, R> {
+    pub fn neighbours(&self) -> VertexStarVerticesIter<'r, R> {
         VertexStarVerticesIter::new(self.id, self.redge)
     }
 
-    pub fn iter_star_edges(&self) -> VertexStarEdgesIter<'r, R> {
+    pub fn star_edges(&self) -> VertexStarEdgesIter<'r, R> {
         VertexStarEdgesIter::new(self.id, self.redge)
     }
 }
