@@ -10,9 +10,11 @@ pub mod hedge_handle;
 pub mod helpers;
 pub mod iterators;
 pub mod mesh_deleter;
+mod p_queue;
+pub mod quadric_simplification;
 pub mod validation;
 pub mod vert_handle;
-use container_trait::{PrimitiveContainer, RedgeContainers, VertData};
+use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, VertData};
 use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
 use hedge_handle::HedgeHandle;
@@ -235,6 +237,62 @@ impl<C: RedgeContainers> Redge<C> {
         mesh
     }
 
+    pub fn vert_count(&self) -> usize {
+        self.verts_meta.len()
+    }
+
+    pub fn edge_count(&self) -> usize {
+        self.edges_meta.len()
+    }
+
+    pub fn hedge_count(&self) -> usize {
+        self.hedges_meta.len()
+    }
+
+    pub fn face_count(&self) -> usize {
+        self.faces_meta.len()
+    }
+
+    pub fn meta_verts(&self) -> impl Iterator<Item = VertHandle<C>> {
+        self.verts_meta.iter().filter_map(|v| {
+            if v.is_active {
+                Some(self.vert_handle(v.id))
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn meta_edges(&self) -> impl Iterator<Item = EdgeHandle<C>> {
+        self.edges_meta.iter().filter_map(|e| {
+            if e.is_active {
+                Some(self.edge_handle(e.id))
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn meta_hedges(&self) -> impl Iterator<Item = HedgeHandle<C>> {
+        self.hedges_meta.iter().filter_map(|e| {
+            if e.is_active {
+                Some(self.hedge_handle(e.id))
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn meta_faces(&self) -> impl Iterator<Item = FaceHandle<C>> {
+        self.faces_meta.iter().filter_map(|f| {
+            if f.is_active {
+                Some(self.face_handle(f.id))
+            } else {
+                None
+            }
+        })
+    }
+
     pub fn vert_handle<'r>(&'r self, id: VertId) -> VertHandle<'r, C> {
         assert!(id.to_index() < self.verts_meta.len());
         VertHandle::new(id, self)
@@ -253,6 +311,24 @@ impl<C: RedgeContainers> Redge<C> {
     pub fn face_handle<'r>(&'r self, id: FaceId) -> FaceHandle<'r, C> {
         assert!(id.to_index() < self.faces_meta.len());
         FaceHandle::new(id, self)
+    }
+
+    pub fn vert_data(&mut self, id: VertId) -> &mut VertData<C::VertContainer> {
+        debug_assert!(self.verts_meta[id.to_index()].id == id);
+        debug_assert!(self.verts_meta[id.to_index()].is_active);
+        self.vert_data.get_mut(id.to_index() as u64)
+    }
+
+    pub fn edge_data(&mut self, id: EdgeId) -> &mut EdgeData<C::EdgeContainer> {
+        debug_assert!(self.edges_meta[id.to_index()].id == id);
+        debug_assert!(self.edges_meta[id.to_index()].is_active);
+        self.edge_data.get_mut(id.to_index() as u64)
+    }
+
+    pub fn face_data(&mut self, id: FaceId) -> &mut FaceData<C::FaceContainer> {
+        debug_assert!(self.faces_meta[id.to_index()].id == id);
+        debug_assert!(self.faces_meta[id.to_index()].is_active);
+        self.face_data.get_mut(id.to_index() as u64)
     }
 
     pub fn to_face_list(&self) -> (Vec<VertData<C::VertContainer>>, Vec<Vec<usize>>) {

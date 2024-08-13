@@ -233,7 +233,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
     // Note: There's no doubt this could be made more efficient, but
     // protecting the invariants is very hard. Don't touch this function
     // unless there's a REALLY compelling case it needs to be done.
-    pub fn collapse_edge(&mut self, edge_id: EdgeId) {
+    pub fn collapse_edge(&mut self, edge_id: EdgeId) -> VertId {
         let v1 = self.mesh.edge_handle(edge_id).v1().id();
         let v2 = self.mesh.edge_handle(edge_id).v2().id();
 
@@ -363,6 +363,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
                 .filter(|h| h.is_active)
                 .find(|h| h.source_id == v2)
         );
+
+        v1
     }
 }
 

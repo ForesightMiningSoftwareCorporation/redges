@@ -178,3 +178,21 @@ impl<'r, R: RedgeContainers> Iterator for FaceLoopHedgeIter<'r, R> {
         Some(HedgeHandle::new(id, self.redge))
     }
 }
+
+pub struct FaceVertIterator<'r, R: RedgeContainers> {
+    pub(crate) face_loop: FaceLoopHedgeIter<'r, R>,
+    pub(crate) redge: &'r Redge<R>,
+}
+
+impl<'r, R: RedgeContainers> Iterator for FaceVertIterator<'r, R> {
+    type Item = VertHandle<'r, R>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let h = self.face_loop.next();
+
+        match h {
+            Some(x) => Some(x.source()),
+            None => None,
+        }
+    }
+}
