@@ -4,7 +4,7 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::ops::{AddAssign, Index};
 
-use linear_isomorphic::*;
+use linear_isomorphic::prelude::*;
 
 type Vec3 = [f32; 3];
 type Vec2 = [f32; 2];

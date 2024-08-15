@@ -18,7 +18,7 @@ use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, V
 use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
 use hedge_handle::HedgeHandle;
-use validation::{is_correct, RedgeCorrectness};
+use validation::{correctness_state, RedgeCorrectness};
 use vert_handle::VertHandle;
 mod wavefront_loader;
 
@@ -232,7 +232,7 @@ impl<C: RedgeContainers> Redge<C> {
             faces_meta,
         };
 
-        let state = is_correct(&mesh);
+        let state = correctness_state(&mesh);
         debug_assert!(state == RedgeCorrectness::Correct, "{:?}", state);
         mesh
     }
@@ -336,6 +336,9 @@ impl<C: RedgeContainers> Redge<C> {
         let mut faces = Vec::with_capacity(self.faces_meta.len());
 
         for face in &self.faces_meta {
+            if !face.is_active {
+                continue;
+            }
             debug_assert!(!face.hedge_id.is_absent());
             let mut current_hedge = &self.hedges_meta[face.hedge_id.to_index()];
             let start_hedge_id = current_hedge.id;
@@ -399,6 +402,11 @@ impl EdgeMetaData {
                 vert_id, self.vert_ids[0], self.vert_ids[1],
             )
         }
+    }
+
+    pub(crate) fn contains(&self, vert_id: VertId) -> bool {
+        debug_assert!(self.is_active);
+        self.vert_ids.contains(&vert_id)
     }
 
     pub(crate) fn cycle_mut(&mut self, vert_id: VertId) -> &mut StarCycleNode {

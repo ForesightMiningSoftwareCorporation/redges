@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Index};
 
 pub trait PrimitiveContainer: Clone + Debug {
     type PrimitiveData: Clone + Debug;
@@ -13,12 +13,14 @@ pub trait PrimitiveContainer: Clone + Debug {
 
     fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, f: F);
 
+    fn resize(&mut self, new_size: usize);
+
     fn len(&self) -> usize;
 
     fn iterate(&self) -> impl Iterator<Item = &Self::PrimitiveData>;
 }
 
-impl<T: Clone + Debug> PrimitiveContainer for Vec<T> {
+impl<T: Default + Clone + Debug> PrimitiveContainer for Vec<T> {
     type PrimitiveData = T;
 
     fn get(&self, index: u64) -> &Self::PrimitiveData {
@@ -47,6 +49,10 @@ impl<T: Clone + Debug> PrimitiveContainer for Vec<T> {
 
     fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, f: F) {
         self.retain(f)
+    }
+
+    fn resize(&mut self, new_size: usize) {
+        self.resize(new_size, T::default());
     }
 
     fn iterate(&self) -> impl Iterator<Item = &Self::PrimitiveData> {
@@ -78,6 +84,8 @@ impl PrimitiveContainer for () {
     fn swap_remove(&mut self, _index: u64) -> Self::PrimitiveData {
         ()
     }
+
+    fn resize(&mut self, _new_size: usize) {}
 
     fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, _f: F) {}
 

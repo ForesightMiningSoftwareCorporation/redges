@@ -140,28 +140,99 @@ pub(crate) fn disable_face_meta<R: RedgeContainers>(face: FaceId, mesh: &mut Red
     face.hedge_id = HedgeId::new_absent();
 }
 
-pub(crate) fn count_edge_vertex_cycles<R: RedgeContainers>(mesh: &Redge<R>) -> Vec<usize> {
-    let mut vertex_cycles = BTreeSet::new();
-    for (i, edge) in mesh.edges_meta.iter().enumerate() {
+fn cycle_endpoint_forward<R: RedgeContainers>(
+    mesh: &Redge<R>,
+    edge: EdgeId,
+    vert: VertId,
+) -> Vec<EdgeId> {
+    let start = edge;
+    let vertex = vert;
+    let mut current = start;
+    let mut seen = Vec::new();
+    loop {
+        seen.push(current);
+        current = mesh.edges_meta[current.to_index()].cycle(vertex).next_edge;
+        if current == start {
+            break;
+        }
+    }
+
+    seen
+}
+
+fn cycle_endpoint_backward<R: RedgeContainers>(
+    mesh: &Redge<R>,
+    edge: EdgeId,
+    vert: VertId,
+) -> Vec<EdgeId> {
+    let start = edge;
+    let vertex = vert;
+    let mut current = start;
+    let mut seen = Vec::new();
+    loop {
+        seen.push(current);
+        current = mesh.edges_meta[current.to_index()].cycle(vertex).prev_edge;
+        if current == start {
+            break;
+        }
+    }
+
+    seen
+}
+
+fn set_equality<T>(set1: &BTreeSet<T>, set2: &BTreeSet<T>) -> bool
+where
+    T: Eq,
+{
+    let mut equal = true;
+    for (a, b) in set1.iter().zip(set2.iter()) {
+        equal = equal && (a == b);
+    }
+
+    equal && set1.len() == set2.len()
+}
+
+pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(mesh: &Redge<R>) -> bool {
+    let mut vertex_edges_in_cycle = vec![BTreeSet::new(); mesh.verts_meta.len()];
+    for edge in mesh.edges_meta.iter() {
         if !edge.is_active {
             continue;
         }
-        let edge_handle = mesh.edge_handle(edge.id);
 
-        let mut ns1: Vec<_> = edge_handle.v1().star_edges().map(|e| e.id()).collect();
-        let mut ns2: Vec<_> = edge_handle.v2().star_edges().map(|e| e.id()).collect();
+        let mut edge_set_is_fine = |vert_id: VertId| {
+            let seen_f = BTreeSet::from_iter(cycle_endpoint_forward(mesh, edge.id, vert_id));
+            let seen_b = BTreeSet::from_iter(cycle_endpoint_backward(mesh, edge.id, vert_id));
 
-        ns1.sort();
-        ns2.sort();
+            if !set_equality(&seen_f, &seen_b) {
+                return false;
+            }
 
-        vertex_cycles.insert((edge_handle.v1().id(), ns1));
-        vertex_cycles.insert((edge_handle.v2().id(), ns2));
+            if vertex_edges_in_cycle[vert_id.to_index()].is_empty() {
+                vertex_edges_in_cycle[vert_id.to_index()] = seen_f;
+            }
+
+            set_equality(&vertex_edges_in_cycle[vert_id.to_index()], &seen_b)
+        };
+
+        let [vert1, vert2] = mesh.edges_meta[edge.id.to_index()].vert_ids;
+        if !(edge_set_is_fine(vert1) && edge_set_is_fine(vert2)) {
+            return false;
+        }
     }
 
-    let mut cycle_counts = vec![0; mesh.verts_meta.len()];
-    for (vid, _) in vertex_cycles {
-        cycle_counts[vid.to_index()] += 1;
-    }
+    true
+}
 
-    cycle_counts
+pub(crate) fn pick_different_edge<R: RedgeContainers>(
+    vert: VertId,
+    bad_edge: EdgeId,
+    mesh: &mut Redge<R>,
+) {
+    let good_edge = mesh
+        .vert_handle(vert)
+        .star_edges()
+        .find(|e| e.id() != bad_edge)
+        .unwrap()
+        .id();
+    mesh.verts_meta[vert.to_index()].edge_id = good_edge;
 }
