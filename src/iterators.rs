@@ -6,9 +6,8 @@ use crate::{
 };
 
 pub struct VertexStarVerticesIter<'r, R: RedgeContainers> {
-    start_edge: EdgeId,
-    current_edge: EdgeId,
     focused_vertex: VertId,
+    iterator: VertexStarEdgesIter<'r, R>,
 
     redge: &'r Redge<R>,
 }
@@ -17,8 +16,7 @@ impl<'r, R: RedgeContainers> VertexStarVerticesIter<'r, R> {
     pub(crate) fn new(vert_id: VertId, redge: &'r Redge<R>) -> Self {
         VertexStarVerticesIter {
             focused_vertex: vert_id,
-            start_edge: redge.verts_meta[vert_id.to_index()].edge_id,
-            current_edge: redge.verts_meta[vert_id.to_index()].edge_id,
+            iterator: VertexStarEdgesIter::new(vert_id, redge),
             redge: redge,
         }
     }
@@ -28,19 +26,12 @@ impl<'r, R: RedgeContainers> Iterator for VertexStarVerticesIter<'r, R> {
     type Item = VertHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let edge = self.redge.edge_handle(self.current_edge);
-        let edge_cycle = edge.edge_cycle_at(self.focused_vertex);
+        let res = self
+            .iterator
+            .next()
+            .map(|e| self.redge.vert_handle(e.opposite(self.focused_vertex)));
 
-        if edge_cycle.next_edge == self.start_edge {
-            return None;
-        }
-
-        self.current_edge = edge_cycle.next_edge;
-
-        Some(VertHandle::new(
-            edge.opposite(self.focused_vertex),
-            self.redge,
-        ))
+        res
     }
 }
 

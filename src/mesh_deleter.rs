@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     ops::{Index, IndexMut},
     process::id,
 };
@@ -91,8 +91,6 @@ impl<R: RedgeContainers> MeshDeleter<R> {
                 counter += 1;
             }
         }
-
-        debug_assert!(edge_fragmentation.contains_key(&EdgeId(1)));
 
         let mut hedge_fragmentation = HashMap::<HedgeId, usize>::new();
         let mut counter = 0;
@@ -265,38 +263,18 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         let v1 = self.mesh.edge_handle(edge_id).v1().id();
         let v2 = self.mesh.edge_handle(edge_id).v2().id();
 
-        let hedge_face_pairs: Vec<_> = self
+        let edges_to_merge: Vec<_> = self
             .mesh
             .edge_handle(edge_id)
             .hedge()
             .radial_neighbours()
-            .map(|h| [h.face_next().id(), h.face_prev().id()])
+            .map(|h| [h.face_prev().edge().id(), h.face_next().edge().id()])
             .collect();
-
-        let mut edge_groups = Vec::new();
-        for [h1, h2] in hedge_face_pairs {
-            let h1_handle = self.mesh.hedge_handle(h1);
-
-            // Find which of the two hedges starts at the edge to be removed.
-            let [h1, h2] = if h1_handle.source().id() == v1 || h1_handle.source().id() == v2 {
-                [h1, h2]
-            } else {
-                [h2, h1]
-            };
-
-            let h1_handle = self.mesh.hedge_handle(h1).radial_next();
-            let h2_handle = self.mesh.hedge_handle(h2).radial_next();
-            let e1 = h1_handle.edge().id();
-            let e2 = h2_handle.edge().id();
-
-            edge_groups.push((h1_handle.id(), e1, h2_handle.id(), e2));
-        }
 
         // TODO: This is incorrect for non-triangular faces as one does not need to
         // remove the faces. Additional logic is needed to keep or restore those faces.
         self.remove_edge(edge_id);
-        let state = correctness_state(&self.mesh);
-        debug_assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+        debug_assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct,);
 
         let v2_edges: Vec<_> = self
             .mesh
@@ -325,93 +303,65 @@ impl<R: RedgeContainers> MeshDeleter<R> {
             status
         });
 
-        let edges: Vec<_> = v2_edges
-            .iter()
-            .chain(v1_edges.iter())
-            .filter(|e| self.mesh.edges_meta[e.to_index()].is_active)
-            .collect();
-
-        let v2_edge_count = v2_edges.len();
-        // Join the vertex cycles.
-        for i in 0..edges.len() {
-            let j = (i + 1) % edges.len();
-            let ep = edges[i];
-            let en = edges[j];
-
-            let vid1 = if i < v2_edge_count { v2 } else { v1 };
-            let vid2 = if j < v2_edge_count { v2 } else { v1 };
-            self.mesh.edges_meta[ep.to_index()].cycle(vid1).next_edge = *en;
-            self.mesh.edges_meta[en.to_index()].cycle(vid2).prev_edge = *ep;
-        }
-
+        // Make all things touching V2 now touch v1.
         for eid in &v2_edges {
-            *self.mesh.edges_meta[eid.to_index()].at(v2) = v1;
-        }
-
-        // In the case of triangular faces, we must merge the surviving topology.
-        for (h1, _e1, h2, e2) in &edge_groups {
-            join_radial_cycles(*h1, *h2, &mut self.mesh);
-
-            println!("\n{:?}", self.mesh.edges_meta[44780]);
-            println!("{:?}", self.mesh.edges_meta[e2.to_index()]);
-            println!("{:?}", self.mesh.edges_meta[44777]);
-            println!("{:?}", [v1, v2]);
-            remove_edge_from_cycle(*e2, crate::Endpoint::V1, &mut self.mesh);
-            remove_edge_from_cycle(*e2, crate::Endpoint::V2, &mut self.mesh);
-            disable_edge_meta(*e2, &mut self.mesh);
-        }
-
-        // Update edges and hedges to point to the correct vertex.
-        for e in v2_edges.iter().chain(v1_edges.iter()) {
-            if !self.mesh.edges_meta[e.to_index()].is_active {
-                continue;
-            }
-
-            let hid = self.mesh.edges_meta[e.to_index()].hedge_id;
-
-            // Update source of the hedges if needed.
-            let radial_hedges: Vec<_> = self
+            let radials: Vec<_> = self
                 .mesh
-                .hedge_handle(hid)
+                .edge_handle(*eid)
+                .hedge()
                 .radial_neighbours()
                 .map(|h| h.id())
                 .collect();
-
-            for hid in radial_hedges {
-                let hedge = &mut self.mesh.hedges_meta[hid.to_index()];
-                if hedge.source_id == v2 {
-                    hedge.source_id = v1;
+            for radial in radials {
+                if self.mesh.hedges_meta[radial.to_index()].source_id == v2 {
+                    self.mesh.hedges_meta[radial.to_index()].source_id = v1;
                 }
             }
+            *self.mesh.edges_meta[eid.to_index()].at(v2) = v1;
+        }
 
-            let start = self.mesh.edges_meta[e.to_index()].hedge_id;
-            let mut current = start;
-            loop {
-                self.mesh.hedges_meta[current.to_index()].edge_id = *e;
+        // Merge the endpoint vertex cycle.
+        let edges: Vec<_> = v2_edges.iter().chain(v1_edges.iter()).collect();
 
-                current = self.mesh.hedges_meta[current.to_index()].radial_next_id;
+        for i in 0..=edges.len() {
+            let ep = edges[i % edges.len()];
+            let en = edges[(i + 1) % edges.len()];
 
-                if current == start {
-                    break;
-                }
-            }
+            self.mesh.edges_meta[ep.to_index()].cycle_mut(v1).next_edge = *en;
+            self.mesh.edges_meta[en.to_index()].cycle_mut(v1).prev_edge = *ep;
 
-            let [v1, v2] = self.mesh.edges_meta[e.to_index()].vert_ids;
-            self.mesh.verts_meta[v1.to_index()].edge_id = *e;
-            self.mesh.verts_meta[v2.to_index()].edge_id = *e;
+            self.mesh.verts_meta[v1.to_index()].edge_id = *ep;
         }
 
         disable_vert_meta(v2, &mut self.mesh);
 
-        // debug_assert!(
-        //     self.mesh.vert_handle(v1).neighbours().count() == v1_edges.len() + v2_edges.len() - 2,
-        //     "{} {}",
-        //     self.mesh.vert_handle(v1).neighbours().count(),
-        //     v1_edges.len() + v2_edges.len() - 2
-        // );
+        for [e1, e2] in edges_to_merge {
+            let h1 = self.mesh.edges_meta[e1.to_index()].hedge_id;
+            let h2 = self.mesh.edges_meta[e2.to_index()].hedge_id;
 
-        // Make sure nothing is pointing to v2.
-        debug_assert!(!self.mesh.hedges_meta.iter().any(|h| h.source_id == v2));
+            let [e2_v1, e2_v2] = self.mesh.edges_meta[e1.to_index()].vert_ids;
+
+            // Make all hedges of e2 point to e1.
+            let orbit: Vec<_> = self
+                .mesh
+                .edge_handle(e2)
+                .hedge()
+                .radial_neighbours()
+                .map(|h| h.id())
+                .collect();
+            for h in orbit {
+                self.mesh.hedges_meta[h.to_index()].edge_id = e1;
+            }
+
+            join_radial_cycles(h1, h2, &mut self.mesh);
+            remove_edge_from_cycle(e2, crate::Endpoint::V1, &mut self.mesh);
+            remove_edge_from_cycle(e2, crate::Endpoint::V2, &mut self.mesh);
+            disable_edge_meta(e2, &mut self.mesh);
+
+            // Prevent invalidation of the endpoints if they pointed to the removed edge.
+            self.mesh.verts_meta[e2_v1.to_index()].edge_id = e1;
+            self.mesh.verts_meta[e2_v2.to_index()].edge_id = e1;
+        }
 
         v1
     }

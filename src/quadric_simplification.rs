@@ -1,6 +1,6 @@
 use std::{
-    fmt::Debug,
-    fmt::Display,
+    collections::BTreeSet,
+    fmt::{Debug, Display},
     ops::{Mul, Neg},
 };
 
@@ -11,7 +11,7 @@ use crate::{
     p_queue::PQueue,
     validation::{correctness_state, RedgeCorrectness},
     wavefront_loader::ObjData,
-    EdgeId,
+    EdgeId, VertId,
 };
 use linear_isomorphic::prelude::*;
 use nalgebra::{Matrix4, Vector4};
@@ -40,12 +40,7 @@ where
             continue;
         }
 
-        println!("{}", simplify_count);
         simplify_count -= 1;
-        // dbg
-        let (vs, fs) = deleter.mesh().to_face_list();
-        ObjData::export(&(&vs, &fs), format!("top_{}.obj", simplify_count).as_str());
-        //
 
         let edge_handle = deleter.mesh().edge_handle(eid);
 
@@ -61,36 +56,7 @@ where
         let new_quadric =
             quadrics[edge_handle.v1().id().to_index()] + quadrics[edge_handle.v2().id().to_index()];
 
-        // dbg
-        let [v1, v2] = edge_handle.vertex_ids();
-        let (vs, fs) = deleter.mesh().to_face_list();
-        ObjData::export(
-            &(&vs, &fs),
-            format!("before_remove_{}.obj", simplify_count).as_str(),
-        );
-        let dbg_edge = vec![
-            deleter.mesh().vert_data.get(v1.to_index() as u64).clone(),
-            deleter.mesh().vert_data.get(v2.to_index() as u64).clone(),
-        ];
-        ObjData::export(
-            &(&dbg_edge, &vec![[0_usize, 1_usize]]),
-            format!("edge_{}.obj", simplify_count).as_str(),
-        );
-        //
-
         let v = deleter.collapse_edge(eid);
-
-        // dbg
-
-        let (vs, fs) = deleter.mesh().to_face_list();
-        ObjData::export(
-            &(&vs, &fs),
-            format!("after_remove_{}.obj", simplify_count).as_str(),
-        );
-        //
-
-        let state = correctness_state(deleter.mesh());
-        debug_assert!(state == RedgeCorrectness::Correct, "{:?}", state);
         let vid = deleter.mesh().vert_handle(v).id();
         quadrics[vid.to_index()] = new_quadric;
 
@@ -182,8 +148,6 @@ where
             // // Find the point that minimizes the quadric error.
             // let sol = inverse * b;
 
-            // println!("{}", cost_matrix);
-
             // // Homogenize the coordinates.
             // let mut res = VertData::<R::VertContainer>::default();
             // res[0] = sol.x / sol.w;
@@ -209,6 +173,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Instant, SystemTime};
+
     use nalgebra::Vector3;
 
     use crate::validation::{manifold_state, RedgeManifoldness};
@@ -228,7 +194,7 @@ mod tests {
             .into_iter()
             .map(|v| Vector3::new(v[0], v[1], v[2]))
             .collect();
-        println!("{}", vertices.len());
+
         let redge = Redge::<(_, _, _)>::new(
             vertices,
             (),
@@ -241,10 +207,12 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
 
+        let start = Instant::now();
         let redge = quadric_simplify(redge, 30000);
+        let duration = start.elapsed();
+        println!("Time elapsed in expensive_function() is: {:?}", duration);
 
         let (vs, fs) = redge.to_face_list();
-        println!("{}", vs.len());
         ObjData::export(&(&vs, &fs), "out/simplified_loop_cube.obj");
     }
 }

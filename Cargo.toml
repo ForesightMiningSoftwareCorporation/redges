@@ -10,3 +10,7 @@ num = "0.4.3"
 num-traits = "0.2.19"
 ordered-float = "4.2.2"
 priority-queue = "2.1.0"
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true

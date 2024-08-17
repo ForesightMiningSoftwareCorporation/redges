@@ -17,7 +17,9 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
         Endpoint::V1 => mesh.edges_meta[edge_id.to_index()].vert_ids[0],
         Endpoint::V2 => mesh.edges_meta[edge_id.to_index()].vert_ids[1],
     };
-    let cycle = mesh.edges_meta[edge_id.to_index()].cycle(active_vertex);
+    let cycle = mesh.edges_meta[edge_id.to_index()]
+        .cycle(active_vertex)
+        .clone();
 
     debug_assert!(cycle.prev_edge != edge_id);
     debug_assert!(cycle.next_edge != edge_id);
@@ -192,7 +194,9 @@ where
     equal && set1.len() == set2.len()
 }
 
-pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(mesh: &Redge<R>) -> bool {
+pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(
+    mesh: &Redge<R>,
+) -> Option<(VertId, BTreeSet<EdgeId>, BTreeSet<EdgeId>)> {
     let mut vertex_edges_in_cycle = vec![BTreeSet::new(); mesh.verts_meta.len()];
     for edge in mesh.edges_meta.iter() {
         if !edge.is_active {
@@ -204,23 +208,31 @@ pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(mesh: &Redge<R>) -> b
             let seen_b = BTreeSet::from_iter(cycle_endpoint_backward(mesh, edge.id, vert_id));
 
             if !set_equality(&seen_f, &seen_b) {
-                return false;
+                return Some((seen_b, seen_f));
             }
 
             if vertex_edges_in_cycle[vert_id.to_index()].is_empty() {
                 vertex_edges_in_cycle[vert_id.to_index()] = seen_f;
             }
 
-            set_equality(&vertex_edges_in_cycle[vert_id.to_index()], &seen_b)
+            if !set_equality(&vertex_edges_in_cycle[vert_id.to_index()], &seen_b) {
+                return Some((vertex_edges_in_cycle[vert_id.to_index()].clone(), seen_b));
+            }
+
+            None
         };
 
         let [vert1, vert2] = mesh.edges_meta[edge.id.to_index()].vert_ids;
-        if !(edge_set_is_fine(vert1) && edge_set_is_fine(vert2)) {
-            return false;
+
+        if let Some((s1, s2)) = edge_set_is_fine(vert1) {
+            return Some((vert1, s1, s2));
+        }
+        if let Some((s1, s2)) = edge_set_is_fine(vert2) {
+            return Some((vert1, s1, s2));
         }
     }
 
-    true
+    None
 }
 
 pub(crate) fn pick_different_edge<R: RedgeContainers>(

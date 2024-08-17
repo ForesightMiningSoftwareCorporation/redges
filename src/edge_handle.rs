@@ -90,6 +90,13 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
     pub fn can_collapse(&self) -> bool {
         let v1 = self.v1();
         let v2 = self.v2();
+
+        let v1_valence = v1.star_edges().count();
+        let v2_valence = v2.star_edges().count();
+
+        if v1_valence <= 3 || v2_valence <= 3 {
+            return false;
+        }
         // If vertices adjacent to the opposite vertices to the edge overlap,
         // this edge cannot be collapsed.
         // Note: this logic ONLY works on triangular faces.

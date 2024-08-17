@@ -22,7 +22,7 @@ pub enum RedgeCorrectness {
     InvalidEdge(usize, EdgeCorrectness),
     InvalidHedge(usize, HedgeCorrectness),
     InvalidFace(usize),
-    VertexCyclesDontMatch,
+    VertexCyclesDontMatch(VertId, BTreeSet<EdgeId>, BTreeSet<EdgeId>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -36,6 +36,7 @@ pub enum EdgeCorrectness {
     EdgeWithOnlyOnePoint,
     InvalidHedgePointer(HedgeId),
     HedgePointsToDifferentEdge,
+    RepeatedEndpoint(VertId),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -146,6 +147,9 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         let prev_edge_v2 = &mesh.edges_meta[edge.v2_cycle.prev_edge.to_index()];
 
         let [v1, v2] = edge.vert_ids;
+        if v1 == v2 {
+            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::RepeatedEndpoint(v1));
+        }
         if next_edge_v1.vert_ids[0] != v1 && next_edge_v1.vert_ids[1] != v1 {
             return RedgeCorrectness::InvalidEdge(
                 i,
@@ -241,8 +245,8 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         }
     }
 
-    if !check_edge_vertex_cycles(mesh) {
-        return RedgeCorrectness::VertexCyclesDontMatch;
+    if let Some((v, s1, s2)) = check_edge_vertex_cycles(mesh) {
+        return RedgeCorrectness::VertexCyclesDontMatch(v, s1, s2);
     }
 
     RedgeCorrectness::Correct

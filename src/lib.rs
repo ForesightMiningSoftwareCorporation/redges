@@ -232,8 +232,7 @@ impl<C: RedgeContainers> Redge<C> {
             faces_meta,
         };
 
-        let state = correctness_state(&mesh);
-        debug_assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+        debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
         mesh
     }
 
@@ -390,23 +389,18 @@ struct EdgeMetaData {
 }
 
 impl EdgeMetaData {
-    pub(crate) fn cycle(&self, vert_id: VertId) -> StarCycleNode {
+    pub(crate) fn cycle(&self, vert_id: VertId) -> &StarCycleNode {
         debug_assert!(self.is_active);
         if vert_id == self.vert_ids[0] {
-            return self.v1_cycle.clone();
+            return &self.v1_cycle;
         } else if vert_id == self.vert_ids[1] {
-            return self.v2_cycle.clone();
+            return &self.v2_cycle;
         } else {
             panic!(
                 "Requested vert {:?} in edge ({:?}, {:?})",
                 vert_id, self.vert_ids[0], self.vert_ids[1],
             )
         }
-    }
-
-    pub(crate) fn contains(&self, vert_id: VertId) -> bool {
-        debug_assert!(self.is_active);
-        self.vert_ids.contains(&vert_id)
     }
 
     pub(crate) fn cycle_mut(&mut self, vert_id: VertId) -> &mut StarCycleNode {
@@ -417,6 +411,11 @@ impl EdgeMetaData {
         } else {
             panic!()
         }
+    }
+
+    pub(crate) fn contains(&self, vert_id: VertId) -> bool {
+        debug_assert!(self.is_active);
+        self.vert_ids.contains(&vert_id)
     }
 
     pub(crate) fn opposite(&mut self, vert_id: VertId) -> &mut VertId {
