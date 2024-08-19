@@ -1,9 +1,8 @@
 use crate::container_trait::{RedgeContainers, VertData};
 use crate::edge_handle::EdgeHandle;
-use crate::hedge_handle::HedgeHandle;
 
 use crate::iterators::{VertexStarEdgesIter, VertexStarVerticesIter};
-use crate::{container_trait::PrimitiveContainer, EdgeId, Redge, VertId, VertMetaData};
+use crate::{container_trait::PrimitiveContainer, Redge, VertId, VertMetaData};
 
 pub struct VertHandle<'r, R: RedgeContainers> {
     id: VertId,

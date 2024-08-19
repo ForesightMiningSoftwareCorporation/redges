@@ -3,11 +3,10 @@
 // to abstract meshes. These methods should work for those abstractions.
 // If we couple them to the objects it will be harder to do this.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 use crate::{
     container_trait::{PrimitiveContainer, RedgeContainers},
-    edge_handle, hedge_handle,
     helpers::check_edge_vertex_cycles,
     EdgeId, Endpoint, HedgeId, Redge, VertId,
 };

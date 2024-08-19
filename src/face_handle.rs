@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use crate::hedge_handle::HedgeHandle;
 use crate::vert_handle::VertHandle;
 
-use crate::{container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, Redge, VertId};
+use crate::{container_trait::PrimitiveContainer, Redge};
 
 use crate::*;
 
@@ -44,7 +44,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
     #[inline]
     pub fn vertices(&'r self) -> impl Iterator<Item = VertHandle<'r, R>> + '_ {
         FaceVertIterator {
-            redge: self.redge,
+            _redge: self.redge,
             face_loop: FaceLoopHedgeIter::new(self.hedge().id(), self.redge),
         }
     }

@@ -4,9 +4,7 @@ use crate::face_handle::FaceHandle;
 use crate::iterators::{FaceLoopHedgeIter, RadialHedgeIter};
 use crate::vert_handle::VertHandle;
 
-use crate::{
-    container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, HedgeId, HedgeMetaData, Redge,
-};
+use crate::{HedgeId, HedgeMetaData, Redge};
 
 pub struct HedgeHandle<'r, R: RedgeContainers> {
     id: HedgeId,

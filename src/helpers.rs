@@ -4,8 +4,8 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    container_trait::RedgeContainers, EdgeId, EdgeMetaData, Endpoint, FaceId, HedgeId, Redge,
-    StarCycleNode, VertId,
+    container_trait::RedgeContainers, EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode,
+    VertId,
 };
 
 pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
@@ -40,20 +40,6 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
     debug_assert!(next_cycle.prev_edge != next_cycle.next_edge);
 }
 
-pub(crate) fn join_vertex_cycles<R: RedgeContainers>(
-    cycle1: StarCycleNode,
-    cycle2: StarCycleNode,
-    vert_id: VertId,
-    mesh: &mut Redge<R>,
-) {
-    mesh.edges_meta[cycle1.next_edge.to_index()]
-        .cycle_mut(vert_id)
-        .prev_edge = cycle2.prev_edge;
-    mesh.edges_meta[cycle2.prev_edge.to_index()]
-        .cycle_mut(vert_id)
-        .next_edge = cycle1.next_edge;
-}
-
 pub(crate) fn join_radial_cycles<R: RedgeContainers>(
     h1: HedgeId,
     h2: HedgeId,
@@ -74,14 +60,6 @@ pub(crate) fn join_radial_cycles<R: RedgeContainers>(
         mesh.hedges_meta[h2.to_index()].radial_prev_id = h1;
         mesh.hedges_meta[h2.to_index()].radial_next_id = h1;
     }
-}
-
-pub(crate) fn remove_hedge_from_face<R: RedgeContainers>(hedge_id: HedgeId, mesh: &mut Redge<R>) {
-    let next = mesh.hedges_meta[hedge_id.to_index()].face_next_id;
-    let prev = mesh.hedges_meta[hedge_id.to_index()].face_prev_id;
-
-    mesh.hedges_meta[next.to_index()].face_prev_id = prev;
-    mesh.hedges_meta[prev.to_index()].face_next_id = next;
 }
 
 pub(crate) fn remove_hedge_from_radial<R: RedgeContainers>(hedge_id: HedgeId, mesh: &mut Redge<R>) {
@@ -233,18 +211,4 @@ pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(
     }
 
     None
-}
-
-pub(crate) fn pick_different_edge<R: RedgeContainers>(
-    vert: VertId,
-    bad_edge: EdgeId,
-    mesh: &mut Redge<R>,
-) {
-    let good_edge = mesh
-        .vert_handle(vert)
-        .star_edges()
-        .find(|e| e.id() != bad_edge)
-        .unwrap()
-        .id();
-    mesh.verts_meta[vert.to_index()].edge_id = good_edge;
 }

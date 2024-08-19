@@ -1,23 +1,13 @@
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    ops::{Index, IndexMut},
-    process::id,
-};
-
-use linear_isomorphic::RealField;
-use num::Float;
+use std::collections::HashMap;
 
 use crate::{
-    container_trait::{PrimitiveContainer, RedgeContainers, VertData},
-    face_handle,
+    container_trait::{PrimitiveContainer, RedgeContainers},
     helpers::{
         disable_edge_meta, disable_face_meta, disable_hedge_meta, disable_vert_meta,
-        join_radial_cycles, join_vertex_cycles, pick_different_edge, remove_edge_from_cycle,
-        remove_hedge_from_face, remove_hedge_from_radial,
+        join_radial_cycles, remove_edge_from_cycle, remove_hedge_from_radial,
     },
     validation::{correctness_state, RedgeCorrectness},
-    wavefront_loader::ObjData,
-    EdgeId, FaceId, HedgeId, Redge, StarCycleNode, VertId,
+    EdgeId, FaceId, HedgeId, Redge, VertId,
 };
 
 /// Helper macro to avoid redundancy when defragmenting mesh data.

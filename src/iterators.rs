@@ -1,8 +1,6 @@
-use std::marker::PhantomData;
-
 use crate::{
-    container_trait::PrimitiveContainer, container_trait::RedgeContainers, edge_handle::EdgeHandle,
-    hedge_handle::HedgeHandle, vert_handle::VertHandle, EdgeId, HedgeId, Redge, VertId,
+    container_trait::RedgeContainers, edge_handle::EdgeHandle, hedge_handle::HedgeHandle,
+    vert_handle::VertHandle, EdgeId, HedgeId, Redge, VertId,
 };
 
 pub struct VertexStarVerticesIter<'r, R: RedgeContainers> {
@@ -172,7 +170,7 @@ impl<'r, R: RedgeContainers> Iterator for FaceLoopHedgeIter<'r, R> {
 
 pub struct FaceVertIterator<'r, R: RedgeContainers> {
     pub(crate) face_loop: FaceLoopHedgeIter<'r, R>,
-    pub(crate) redge: &'r Redge<R>,
+    pub(crate) _redge: &'r Redge<R>,
 }
 
 impl<'r, R: RedgeContainers> Iterator for FaceVertIterator<'r, R> {

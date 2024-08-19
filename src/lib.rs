@@ -413,21 +413,6 @@ impl EdgeMetaData {
         }
     }
 
-    pub(crate) fn contains(&self, vert_id: VertId) -> bool {
-        debug_assert!(self.is_active);
-        self.vert_ids.contains(&vert_id)
-    }
-
-    pub(crate) fn opposite(&mut self, vert_id: VertId) -> &mut VertId {
-        if vert_id == self.vert_ids[0] {
-            return &mut self.vert_ids[1];
-        } else if vert_id == self.vert_ids[1] {
-            return &mut self.vert_ids[0];
-        } else {
-            panic!()
-        }
-    }
-
     pub(crate) fn at(&mut self, vert_id: VertId) -> &mut VertId {
         if vert_id == self.vert_ids[0] {
             return &mut self.vert_ids[0];
@@ -487,15 +472,6 @@ pub struct StarCycleNode {
 pub enum Endpoint {
     V1,
     V2,
-}
-
-#[inline]
-fn get_disjoint<'a, T>(x: &'a mut [T], a: usize, b: usize) -> (&'a mut T, &'a mut T) {
-    assert_ne!(a, b);
-    assert!(a < x.len());
-    assert!(b < x.len());
-    let ptr = x.as_mut_ptr();
-    (unsafe { &mut *ptr.add(a) }, unsafe { &mut *ptr.add(b) })
 }
 
 #[cfg(test)]

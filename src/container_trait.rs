@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::Index};
+use std::fmt::Debug;
 
 pub trait PrimitiveContainer: Clone + Debug {
     type PrimitiveData: Clone + Debug;

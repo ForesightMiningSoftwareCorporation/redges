@@ -24,21 +24,6 @@ where
         }
     }
 
-    pub fn from_iter<I>(iter: I) -> Self
-    where
-        I: Iterator<Item = (T, W)>,
-    {
-        let mut res = PQueue {
-            queue: PriorityQueue::new(),
-        };
-
-        for (item, weight) in iter {
-            res.push(item, weight);
-        }
-
-        res
-    }
-
     pub fn push(&mut self, item: T, weight: W) -> Option<OrderedFloat<W>> {
         self.queue.push(item, OrderedFloat(weight))
     }
@@ -60,18 +45,5 @@ where
 
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.queue.len()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (T, W)> + '_
-    where
-        T: Clone,
-    {
-        self.queue
-            .iter()
-            .map(|(item, ord_weight)| (item.clone(), ord_weight.0))
     }
 }
