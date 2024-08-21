@@ -104,9 +104,9 @@ pub trait RedgeContainers {
     type FaceContainer: PrimitiveContainer;
 }
 
-pub type VertData<R> = <<R as RedgeContainers>::VertContainer> as PrimitiveContainer>::PrimitiveData;
-pub type EdgeData<R> = <<R as Redgecontainers>::EdgeContainer> as PrimitiveContainer>::PrimitiveData;
-pub type FaceData<R> = <<R as RedgeContainers>::FaceContainer> as PrimitiveContainer>::PrimitiveData;
+pub type VertData<R> = <<R as RedgeContainers>::VertContainer as PrimitiveContainer>::PrimitiveData;
+pub type EdgeData<R> = <<R as RedgeContainers>::EdgeContainer as PrimitiveContainer>::PrimitiveData;
+pub type FaceData<R> = <<R as RedgeContainers>::FaceContainer as PrimitiveContainer>::PrimitiveData;
 
 impl<V, E, F> RedgeContainers for (V, E, F)
 where

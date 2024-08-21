@@ -38,7 +38,7 @@ macro_rules! compact_mesh_data {
 }
 
 pub struct MeshDeleter<R: RedgeContainers> {
-    mesh: Redge<R>,
+    pub(crate) mesh: Redge<R>,
 }
 
 impl<R: RedgeContainers> MeshDeleter<R> {
@@ -250,6 +250,13 @@ impl<R: RedgeContainers> MeshDeleter<R> {
     // protecting the invariants is very hard. Don't touch this function
     // unless there's a REALLY compelling case it needs to be done.
     pub fn collapse_edge(&mut self, edge_id: EdgeId) -> VertId {
+        debug_assert!(self
+            .mesh
+            .edge_handle(edge_id)
+            .hedge()
+            .radial_neighbours()
+            .all(|h| h.face_loop().count() == 3));
+
         let v1 = self.mesh.edge_handle(edge_id).v1().id();
         let v2 = self.mesh.edge_handle(edge_id).v2().id();
 

@@ -26,7 +26,7 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
         )
     }
 
-    pub fn data(&self) -> &VertData<R::VertContainer> {
+    pub fn data(&self) -> &VertData<R> {
         self.redge.vert_data.get(self.id.to_index() as u64)
     }
 

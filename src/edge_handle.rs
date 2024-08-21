@@ -39,7 +39,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         HedgeHandle::new(self.metadata().hedge_id, self.redge)
     }
 
-    pub fn data(&self) -> &EdgeData<R::EdgeContainer> {
+    pub fn data(&self) -> &EdgeData<R> {
         self.redge.edge_data.get(self.id.to_index() as u64)
     }
 

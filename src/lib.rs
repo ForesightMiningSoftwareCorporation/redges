@@ -54,9 +54,9 @@ define_id_struct!(HedgeId);
 define_id_struct!(FaceId);
 
 pub struct Redge<R: RedgeContainers> {
-    vert_data: C::VertContainer,
-    edge_data: C::EdgeContainer,
-    face_data: C::FaceContainer,
+    vert_data: R::VertContainer,
+    edge_data: R::EdgeContainer,
+    face_data: R::FaceContainer,
 
     verts_meta: Vec<VertMetaData>,
     edges_meta: Vec<EdgeMetaData>,
@@ -64,11 +64,11 @@ pub struct Redge<R: RedgeContainers> {
     faces_meta: Vec<FaceMetaData>,
 }
 
-impl<C: RedgeContainers> Redge<C> {
+impl<R: RedgeContainers> Redge<R> {
     pub fn new(
-        vert_data: C::VertContainer,
-        edge_data: C::EdgeContainer,
-        face_data: C::FaceContainer,
+        vert_data: R::VertContainer,
+        edge_data: R::EdgeContainer,
+        face_data: R::FaceContainer,
         faces: impl Iterator<Item = impl Iterator<Item = usize>>,
     ) -> Self {
         // 1. Initialize the setup structures.
@@ -250,7 +250,7 @@ impl<C: RedgeContainers> Redge<C> {
         self.faces_meta.len()
     }
 
-    pub fn meta_verts(&self) -> impl Iterator<Item = VertHandle<C>> {
+    pub fn meta_verts(&self) -> impl Iterator<Item = VertHandle<R>> {
         self.verts_meta.iter().filter_map(|v| {
             if v.is_active {
                 Some(self.vert_handle(v.id))
@@ -260,7 +260,7 @@ impl<C: RedgeContainers> Redge<C> {
         })
     }
 
-    pub fn meta_edges(&self) -> impl Iterator<Item = EdgeHandle<C>> {
+    pub fn meta_edges(&self) -> impl Iterator<Item = EdgeHandle<R>> {
         self.edges_meta.iter().filter_map(|e| {
             if e.is_active {
                 Some(self.edge_handle(e.id))
@@ -270,7 +270,7 @@ impl<C: RedgeContainers> Redge<C> {
         })
     }
 
-    pub fn meta_hedges(&self) -> impl Iterator<Item = HedgeHandle<C>> {
+    pub fn meta_hedges(&self) -> impl Iterator<Item = HedgeHandle<R>> {
         self.hedges_meta.iter().filter_map(|e| {
             if e.is_active {
                 Some(self.hedge_handle(e.id))
@@ -280,7 +280,7 @@ impl<C: RedgeContainers> Redge<C> {
         })
     }
 
-    pub fn meta_faces(&self) -> impl Iterator<Item = FaceHandle<C>> {
+    pub fn meta_faces(&self) -> impl Iterator<Item = FaceHandle<R>> {
         self.faces_meta.iter().filter_map(|f| {
             if f.is_active {
                 Some(self.face_handle(f.id))
@@ -290,45 +290,45 @@ impl<C: RedgeContainers> Redge<C> {
         })
     }
 
-    pub fn vert_handle<'r>(&'r self, id: VertId) -> VertHandle<'r, C> {
+    pub fn vert_handle<'r>(&'r self, id: VertId) -> VertHandle<'r, R> {
         assert!(id.to_index() < self.verts_meta.len());
         VertHandle::new(id, self)
     }
 
-    pub fn edge_handle<'r>(&'r self, id: EdgeId) -> EdgeHandle<'r, C> {
+    pub fn edge_handle<'r>(&'r self, id: EdgeId) -> EdgeHandle<'r, R> {
         assert!(id.to_index() < self.edges_meta.len());
         EdgeHandle::new(id, self)
     }
 
-    pub fn hedge_handle<'r>(&'r self, id: HedgeId) -> HedgeHandle<'r, C> {
+    pub fn hedge_handle<'r>(&'r self, id: HedgeId) -> HedgeHandle<'r, R> {
         assert!(id.to_index() < self.hedges_meta.len());
         HedgeHandle::new(id, self)
     }
 
-    pub fn face_handle<'r>(&'r self, id: FaceId) -> FaceHandle<'r, C> {
+    pub fn face_handle<'r>(&'r self, id: FaceId) -> FaceHandle<'r, R> {
         assert!(id.to_index() < self.faces_meta.len());
         FaceHandle::new(id, self)
     }
 
-    pub fn vert_data(&mut self, id: VertId) -> &mut VertData<C::VertContainer> {
+    pub fn vert_data(&mut self, id: VertId) -> &mut VertData<R> {
         debug_assert!(self.verts_meta[id.to_index()].id == id);
         debug_assert!(self.verts_meta[id.to_index()].is_active);
         self.vert_data.get_mut(id.to_index() as u64)
     }
 
-    pub fn edge_data(&mut self, id: EdgeId) -> &mut EdgeData<C::EdgeContainer> {
+    pub fn edge_data(&mut self, id: EdgeId) -> &mut EdgeData<R> {
         debug_assert!(self.edges_meta[id.to_index()].id == id);
         debug_assert!(self.edges_meta[id.to_index()].is_active);
         self.edge_data.get_mut(id.to_index() as u64)
     }
 
-    pub fn face_data(&mut self, id: FaceId) -> &mut FaceData<C::FaceContainer> {
+    pub fn face_data(&mut self, id: FaceId) -> &mut FaceData<R> {
         debug_assert!(self.faces_meta[id.to_index()].id == id);
         debug_assert!(self.faces_meta[id.to_index()].is_active);
         self.face_data.get_mut(id.to_index() as u64)
     }
 
-    pub fn to_face_list(&self) -> (Vec<VertData<C::VertContainer>>, Vec<Vec<usize>>) {
+    pub fn to_face_list(&self) -> (Vec<VertData<R>>, Vec<Vec<usize>>) {
         let verts = self.vert_data.iterate().cloned().collect();
         let mut faces = Vec::with_capacity(self.faces_meta.len());
 

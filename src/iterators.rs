@@ -115,7 +115,7 @@ impl<'r, R: RedgeContainers> Iterator for RadialHedgeIter<'r, R> {
     type Item = HedgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        debug_assert!(self.current_hedge != HedgeId::new_absent());
+        debug_assert!(self.current_hedge != HedgeId::ABSENT);
         if self.current_hedge == self.start_hedge && !self.start {
             return None;
         }
@@ -174,11 +174,6 @@ impl<'r, R: RedgeContainers> Iterator for FaceVertIterator<'r, R> {
     type Item = VertHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let h = self.face_loop.next();
-
-        match h {
-            Some(x) => Some(x.source()),
-            None => None,
-        }
+        self.face_loop.next().map(|x| x.source())
     }
 }

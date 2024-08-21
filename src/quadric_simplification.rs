@@ -1,14 +1,15 @@
-use std::{collections::BTreeSet, ops::Mul};
+use std::{collections::BTreeSet, hash::Hash, ops::Mul};
 
 use crate::{
     container_trait::{PrimitiveContainer, VertData},
     edge_handle::EdgeHandle,
     face_handle::FaceMetrics,
     p_queue::PQueue,
+    quadrics::Quadric,
+    wavefront_loader::ObjData,
     EdgeId,
 };
 use linear_isomorphic::prelude::*;
-use nalgebra::{Matrix4, Vector3, Vector4};
 use num::{traits::float::FloatCore, Float};
 
 use crate::{container_trait::RedgeContainers, Redge};
@@ -20,8 +21,8 @@ use crate::{container_trait::RedgeContainers, Redge};
 pub fn quadric_simplify<S, R>(mut mesh: Redge<R>, mut simplify_count: usize) -> Redge<R>
 where
     R: RedgeContainers,
-    S: RealField + nalgebra::ComplexField + FloatCore + Mul<Vector4<S>, Output = Vector4<S>>,
-    VertData<R::VertContainer>: InnerSpace<S>,
+    S: RealField + nalgebra::ComplexField + FloatCore + Mul<VertData<R>, Output = VertData<R>>,
+    VertData<R>: InnerSpace<S>,
 {
     // let mut surface_area = S::from(0.0).unwrap();
     // for face in mesh.meta_faces() {
@@ -33,38 +34,48 @@ where
     //     *mesh.vert_data.get_mut(i as u64) = pos * (S::from(1.0).unwrap() / mean_area);
     // }
 
-    let (mut quadrics, mut queue) = initialize_vertex_quadrics::<S, _>(&mesh);
+    let (mut quadrics, mut queue) = initialize_vertex_quadrics::<S, R>(&mesh);
 
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
     while !queue.is_empty() && simplify_count > 0 {
-        let (eid, _) = queue.pop().unwrap();
+        let (EdgeOptimum { id: eid, optimum }, _cost) = queue.pop().unwrap();
 
         let edge_handle = deleter.mesh().edge_handle(eid);
         if !edge_handle.is_active() || !edge_handle.can_collapse() {
             continue;
         }
 
-        let (_cost, point) = compute_edge_weight(&edge_handle, &quadrics);
-        let mut pos = VertData::<R::VertContainer>::default();
-        pos[0] = point.x;
-        pos[1] = point.y;
-        pos[2] = point.z;
-        if collapse_would_flip_normal(&edge_handle, &pos) {
+        if collapse_would_flip_normal(&edge_handle, &optimum) {
             continue;
         }
 
         simplify_count -= 1;
 
+        let v1 = edge_handle.v1().data().clone();
+        let v2 = edge_handle.v2().data().clone();
+
+        let (vs, fs) = deleter.mesh.to_face_list();
+        ObjData::export(
+            &(&vs, &fs),
+            &format!("mesh_{}.obj", simplify_count).to_string(),
+        );
+        ObjData::export(
+            &(&vec![v1.clone(), v2.clone()], &vec![[0, 1]]),
+            &format!("edge_{}.obj", simplify_count).to_string(),
+        );
+        let edge_handle = deleter.mesh().edge_handle(eid);
+
         // Remove all edges that touch the current edge from the queue.
         for e in edge_handle.v1().star_edges() {
-            queue.remove(e.id());
+            queue.remove(EdgeOptimum::from_id(e.id()));
         }
         for e in edge_handle.v2().star_edges() {
-            queue.remove(e.id());
+            queue.remove(EdgeOptimum::from_id(e.id()));
         }
 
-        let new_quadric =
-            quadrics[edge_handle.v1().id().to_index()] + quadrics[edge_handle.v2().id().to_index()];
+        // Update the quadric.
+        let new_quadric = quadrics[edge_handle.v1().id().to_index()].clone()
+            + quadrics[edge_handle.v2().id().to_index()].clone();
 
         let v = deleter.collapse_edge(eid);
         let vid = deleter.mesh().vert_handle(v).id();
@@ -72,141 +83,244 @@ where
 
         // Update the position of the collapsed vertex to that wich minimizes the
         // quadric error.
-        let mut pos = VertData::<R::VertContainer>::default();
-        debug_assert!(
-            Float::is_finite(point.x) && Float::is_finite(point.y) && Float::is_finite(point.z)
-        );
-        pos[0] = point.x;
-        pos[1] = point.y;
-        pos[2] = point.z;
-        *deleter.mesh().vert_data(vid) = pos;
+        println!("\n\nbefore {:?}", deleter.mesh().vert_data(vid));
+        println!("optimum {:?}", optimum);
+        println!("v1 {:?} v2 {:?}", v1, v2);
+        *deleter.mesh().vert_data(vid) = optimum;
+        println!("after {:?}", deleter.mesh().vert_data(vid));
 
         // Add all edges touching the collapsed vertex with updated costs.
         for e in deleter.mesh().vert_handle(vid).star_edges() {
             debug_assert!(e.is_active());
-            let (cost, _) = compute_edge_weight(&e, &quadrics);
-            queue.push(e.id(), cost);
+            let (cost, new_optimum) = compute_edge_cost(&e, &quadrics);
+            queue.push(
+                EdgeOptimum {
+                    id: e.id(),
+                    optimum: new_optimum,
+                },
+                cost,
+            );
         }
     }
 
     deleter.end_deletion()
 }
 
+struct EdgeOptimum<V> {
+    id: EdgeId,
+    optimum: V,
+}
+
+impl<V> PartialEq for EdgeOptimum<V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<V> Eq for EdgeOptimum<V> {}
+
+impl<V> Hash for EdgeOptimum<V> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl<V: Default> EdgeOptimum<V> {
+    fn from_id(id: EdgeId) -> Self {
+        Self {
+            id,
+            optimum: V::default(),
+        }
+    }
+}
+
 /// For each vertex, compute the quadrics around its vertices.
-fn initialize_vertex_quadrics<S, R>(mesh: &Redge<R>) -> (Vec<Matrix4<S>>, PQueue<EdgeId, S>)
+fn initialize_vertex_quadrics<S, R>(
+    mesh: &Redge<R>,
+) -> (
+    Vec<Quadric<S, VertData<R>>>,
+    PQueue<EdgeOptimum<VertData<R>>, S>,
+)
 where
     R: RedgeContainers,
-    S: FloatCore + RealField + nalgebra::ComplexField,
-    VertData<R::VertContainer>: InnerSpace<S>,
+    S: FloatCore + RealField + nalgebra::ComplexField + Mul<VertData<R>, Output = VertData<R>>,
+    VertData<R>: InnerSpace<S>,
 {
-    let mut vertex_quadrics = vec![Matrix4::<S>::zeros(); mesh.vert_count()];
+    let mut vertex_quadrics = vec![Quadric::default(); mesh.vert_count()];
 
     for face in mesh.meta_faces() {
-        let normal = face.normal();
-        assert!(
-            Float::is_finite(normal[0])
-                && Float::is_finite(normal[1])
-                && Float::is_finite(normal[2])
-        );
-        let position = face.hedge().source().data().clone();
-        let d = -position.dot(&normal);
-
-        let q = Vector4::<S>::new(normal[0], normal[1], normal[2], d);
-        let quadric = q * q.transpose();
-
+        let points: Vec<_> = face.vertices().map(|v| v.data().clone()).take(3).collect();
         for v in face.vertices() {
-            vertex_quadrics[v.id().to_index()] += quadric;
+            vertex_quadrics[v.id().to_index()] +=
+                Quadric::from_tri(points[0].clone(), points[1].clone(), points[2].clone());
         }
     }
 
     let mut queue = PQueue::new();
     for edge in mesh.meta_edges() {
-        let (cost, _) = compute_edge_weight(&edge, &vertex_quadrics);
-        queue.push(edge.id(), cost);
+        let (cost, optimum) = compute_edge_cost(&edge, &vertex_quadrics);
+        queue.push(
+            EdgeOptimum {
+                id: edge.id(),
+                optimum,
+            },
+            cost,
+        );
     }
 
     (vertex_quadrics, queue)
+
+    // let mut vertex_quadrics = vec![Matrix4::<S>::zeros(); mesh.vert_count()];
+
+    // for face in mesh.meta_faces() {
+    //     let normal = face.normal();
+    //     assert!(
+    //         Float::is_finite(normal[0])
+    //             && Float::is_finite(normal[1])
+    //             && Float::is_finite(normal[2])
+    //     );
+    //     let position = face.hedge().source().data().clone();
+    //     let d = -position.dot(&normal);
+
+    //     let q = Vector4::<S>::new(normal[0], normal[1], normal[2], d);
+    //     let quadric = q * q.transpose();
+
+    //     for v in face.vertices() {
+    //         vertex_quadrics[v.id().to_index()] += quadric;
+    //     }
+    // }
+
+    // let mut queue = PQueue::new();
+    // for edge in mesh.meta_edges() {
+    //     let (cost, _) = compute_edge_weight(&edge, &vertex_quadrics);
+    //     queue.push(edge.id(), cost);
+    // }
+
+    // (vertex_quadrics, queue)
 }
 
-fn compute_edge_weight<'r, S, R: RedgeContainers>(
+fn compute_edge_cost<'r, S, R: RedgeContainers>(
     edge: &EdgeHandle<'r, R>,
-    quadrics: &Vec<Matrix4<S>>,
-) -> (S, Vector4<S>)
+    quadrics: &Vec<Quadric<S, VertData<R>>>,
+) -> (S, VertData<R>)
 where
-    S: RealField + nalgebra::ComplexField,
-    VertData<R::VertContainer>: VectorSpace<Scalar = S>,
+    S: RealField + Mul<VertData<R>, Output = VertData<R>>,
+    VertData<R>: InnerSpace<S>,
 {
-    debug_assert!(edge.is_active());
-    let cost_matrix = quadrics[edge.v1().id().to_index()] + quadrics[edge.v2().id().to_index()];
+    let q1 = quadrics[edge.v1().id().to_index()].clone();
+    let q2 = quadrics[edge.v2().id().to_index()].clone();
 
-    // Alternative point selection when the matrix is singular
-    let pick_safe_point = |edge: &EdgeHandle<R>| {
-        let half = S::from(0.5).unwrap();
-        let mid = (edge.v1().data().clone() + edge.v2().data().clone()) * half;
-        let v1 = edge.v1().data().clone();
-        let v2 = edge.v2().data().clone();
+    let q = q1 + q2;
 
-        let mid = Vector4::new(mid[0], mid[1], mid[2], S::from(1.0).unwrap());
-        let v1 = Vector4::new(v1[0], v1[1], v1[2], S::from(1.0).unwrap());
-        let v2 = Vector4::new(v2[0], v2[1], v2[2], S::from(1.0).unwrap());
+    match q.optimize() {
+        Some((s, v)) => (s, v),
+        None => {
+            let v1 = edge.v1().data().clone();
+            let v2 = edge.v2().data().clone();
+            let mid = (v1.clone() + v2.clone()) * S::from(0.5).unwrap();
 
-        let c_mid = (mid.transpose() * cost_matrix * mid)[(0, 0)];
-        let c_v1 = (v1.transpose() * cost_matrix * v1)[(0, 0)];
-        let c_v2 = (v2.transpose() * cost_matrix * v2)[(0, 0)];
+            // let c1 = q.error(v1.clone());
+            // let c2 = q.error(v2.clone());
+            let cm = q.error(mid.clone());
 
-        if c_mid < c_v1 && c_mid < c_v2 {
-            return (mid, c_mid);
-        } else if c_v1 < c_v2 {
-            return (v1, c_v1);
-        } else {
-            (v2, c_v2)
+            // let candidates = [(c1, v1), (c2, v2), (cm, mid)];
+
+            // let best = candidates
+            //     .iter()
+            //     .min_by(|(a, _), (b, _)| match a.partial_cmp(b) {
+            //         Some(x) => x,
+            //         None => std::cmp::Ordering::Equal,
+            //     })
+            //     .unwrap()
+            //     .clone();
+
+            // best
+
+            (cm, mid)
         }
-    };
-
-    let det = cost_matrix.determinant();
-    let (new_point, cost) = match cost_matrix.try_inverse() {
-        None => pick_safe_point(edge),
-        Some(inverse) => {
-            if Float::abs(det) < S::from(0.0001).unwrap() {
-                pick_safe_point(edge)
-            } else {
-                let b = Vector4::<S>::new(
-                    S::from(0.).unwrap(),
-                    S::from(0.).unwrap(),
-                    S::from(0.).unwrap(),
-                    S::from(1.).unwrap(),
-                );
-                // Find the point that minimizes the quadric error.
-                let sol = inverse * b;
-
-                // Homogenize the coordinates.
-                let mut res = VertData::<R::VertContainer>::default();
-                res[0] = sol.x / sol.w;
-                res[1] = sol.y / sol.w;
-                res[2] = sol.z / sol.w;
-
-                let new_point = Vector4::<S>::new(res[0], res[1], res[2], S::from(1.0).unwrap());
-
-                (
-                    new_point,
-                    (new_point.transpose() * cost_matrix * new_point)[(0, 0)],
-                )
-            }
-        }
-    };
-
-    (-cost, new_point)
+    }
 }
+
+// fn compute_edge_weight<'r, S, R: RedgeContainers>(
+//     edge: &EdgeHandle<'r, R>,
+//     quadrics: &Vec<Matrix4<S>>,
+// ) -> (S, Vector4<S>)
+// where
+//     S: RealField + nalgebra::ComplexField,
+//     VertData<R>: VectorSpace<Scalar = S>,
+// {
+//     debug_assert!(edge.is_active());
+//     let cost_matrix = quadrics[edge.v1().id().to_index()] + quadrics[edge.v2().id().to_index()];
+
+//     // Alternative point selection when the matrix is singular
+//     let pick_safe_point = |edge: &EdgeHandle<R>| {
+//         let half = S::from(0.5).unwrap();
+//         let mid = (edge.v1().data().clone() + edge.v2().data().clone()) * half;
+//         let v1 = edge.v1().data().clone();
+//         let v2 = edge.v2().data().clone();
+
+//         let mid = Vector4::new(mid[0], mid[1], mid[2], S::from(1.0).unwrap());
+//         let v1 = Vector4::new(v1[0], v1[1], v1[2], S::from(1.0).unwrap());
+//         let v2 = Vector4::new(v2[0], v2[1], v2[2], S::from(1.0).unwrap());
+
+//         let c_mid = (mid.transpose() * cost_matrix * mid)[(0, 0)];
+//         let c_v1 = (v1.transpose() * cost_matrix * v1)[(0, 0)];
+//         let c_v2 = (v2.transpose() * cost_matrix * v2)[(0, 0)];
+
+//         if c_mid < c_v1 && c_mid < c_v2 {
+//             return (mid, c_mid);
+//         } else if c_v1 < c_v2 {
+//             return (v1, c_v1);
+//         } else {
+//             (v2, c_v2)
+//         }
+//     };
+
+//     let det = cost_matrix.determinant();
+//     let (new_point, cost) = match cost_matrix.try_inverse() {
+//         None => pick_safe_point(edge),
+//         Some(inverse) => {
+//             if Float::abs(det) < S::from(0.0001).unwrap() {
+//                 pick_safe_point(edge)
+//             } else {
+//                 let b = Vector4::<S>::new(
+//                     S::from(0.).unwrap(),
+//                     S::from(0.).unwrap(),
+//                     S::from(0.).unwrap(),
+//                     S::from(1.).unwrap(),
+//                 );
+//                 // Find the point that minimizes the quadric error.
+//                 let sol = inverse * b;
+
+//                 // Homogenize the coordinates.
+//                 let mut res = VertData::<R>::default();
+//                 res[0] = sol.x / sol.w;
+//                 res[1] = sol.y / sol.w;
+//                 res[2] = sol.z / sol.w;
+
+//                 let new_point = Vector4::<S>::new(res[0], res[1], res[2], S::from(1.0).unwrap());
+
+//                 (
+//                     new_point,
+//                     (new_point.transpose() * cost_matrix * new_point)[(0, 0)],
+//                 )
+//             }
+//         }
+//     };
+
+//     if cost < S::from(0.0).unwrap() {
+//         println!("{}", cost);
+//     }
+
+//     (-cost, new_point)
+// }
 
 /// Test if an edge collapse would flip the direciton of a face normal.
-fn collapse_would_flip_normal<'r, R, S>(
-    edge: &EdgeHandle<'r, R>,
-    new_pos: &VertData<R::VertContainer>,
-) -> bool
+fn collapse_would_flip_normal<'r, R, S>(edge: &EdgeHandle<'r, R>, new_pos: &VertData<R>) -> bool
 where
     R: RedgeContainers,
     S: FloatCore + RealField + nalgebra::ComplexField,
-    VertData<R::VertContainer>: InnerSpace<S>,
+    VertData<R>: InnerSpace<S>,
 {
     // These are all the faces adjacent to the edge.
     let mut adjacent_faces: BTreeSet<_> = edge
@@ -231,9 +345,7 @@ where
         adjacent_faces.remove(&f);
     }
 
-    let get_normal = |p: &VertData<R::VertContainer>,
-                      pp: &VertData<R::VertContainer>,
-                      pn: &VertData<R::VertContainer>| {
+    let get_normal = |p: &VertData<R>, pp: &VertData<R>, pn: &VertData<R>| {
         let e1 = pn.clone() - p.clone();
         let e2 = pp.clone() - p.clone();
 

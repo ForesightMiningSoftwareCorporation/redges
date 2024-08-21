@@ -29,7 +29,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
         HedgeHandle::new(self.metadata().hedge_id, self.redge)
     }
 
-    pub fn data(&self) -> &FaceData<R::FaceContainer> {
+    pub fn data(&self) -> &FaceData<R> {
         self.redge.face_data.get(self.id.to_index() as u64)
     }
 
@@ -60,17 +60,17 @@ where
     fn unit_normal(&self) -> N;
 }
 
-impl<'r, R: RedgeContainers, S> FaceMetrics<R::VertContainer, VertData<R::VertContainer>, S>
-    for FaceHandle<'r, R>
+impl<'r, R: RedgeContainers, S> FaceMetrics<VertData<R>, VertData<R>, S> for FaceHandle<'r, R>
 where
-    VertData<R::VertContainer>: InnerSpace<S>,
+    VertData<R>: InnerSpace<S>,
     S: RealField,
 {
+    // TODO: only works on triangular faces for now.
     fn area(&self) -> S {
         self.normal().norm() / S::from(2.0).unwrap()
     }
 
-    fn normal(&self) -> VertData<R::VertContainer> {
+    fn normal(&self) -> VertData<R> {
         let mut iter = self.vertices();
         let p1 = iter.next().unwrap().data().clone();
         let p2 = iter.next().unwrap().data().clone();
@@ -82,7 +82,7 @@ where
         e1.cross(&e2)
     }
 
-    fn unit_normal(&self) -> VertData<R::VertContainer> {
+    fn unit_normal(&self) -> VertData<R> {
         self.normal().normalized()
     }
 }

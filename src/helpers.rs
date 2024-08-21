@@ -79,7 +79,7 @@ pub(crate) fn remove_hedge_from_radial<R: RedgeContainers>(hedge_id: HedgeId, me
 pub(crate) fn disable_vert_meta<R: RedgeContainers>(vert_id: VertId, mesh: &mut Redge<R>) {
     let vert = &mut mesh.verts_meta[vert_id.to_index()];
     vert.is_active = false;
-    vert.edge_id = EdgeId::new_absent();
+    vert.edge_id = EdgeId::ABSENT;
 }
 
 pub(crate) fn disable_edge_meta<R: RedgeContainers>(edge: EdgeId, mesh: &mut Redge<R>) {
@@ -88,15 +88,15 @@ pub(crate) fn disable_edge_meta<R: RedgeContainers>(edge: EdgeId, mesh: &mut Red
     // Break every single pointer in this edge.
     // Yes its more overhead, but it prevents bugs.
     edge.is_active = false;
-    edge.vert_ids = [VertId::new_absent(); 2];
-    edge.hedge_id = HedgeId::new_absent();
+    edge.vert_ids = [VertId::ABSENT; 2];
+    edge.hedge_id = HedgeId::ABSENT;
     edge.v1_cycle = StarCycleNode {
-        prev_edge: EdgeId::new_absent(),
-        next_edge: EdgeId::new_absent(),
+        prev_edge: EdgeId::ABSENT,
+        next_edge: EdgeId::ABSENT,
     };
     edge.v2_cycle = StarCycleNode {
-        prev_edge: EdgeId::new_absent(),
-        next_edge: EdgeId::new_absent(),
+        prev_edge: EdgeId::ABSENT,
+        next_edge: EdgeId::ABSENT,
     };
 }
 
@@ -104,20 +104,20 @@ pub(crate) fn disable_hedge_meta<R: RedgeContainers>(hedge: HedgeId, mesh: &mut 
     let hedge = &mut mesh.hedges_meta[hedge.to_index()];
 
     hedge.is_active = false;
-    hedge.edge_id = EdgeId::new_absent();
-    hedge.face_id = FaceId::new_absent();
-    hedge.face_next_id = HedgeId::new_absent();
-    hedge.face_prev_id = HedgeId::new_absent();
-    hedge.radial_next_id = HedgeId::new_absent();
-    hedge.radial_prev_id = HedgeId::new_absent();
-    hedge.source_id = VertId::new_absent();
+    hedge.edge_id = EdgeId::ABSENT;
+    hedge.face_id = FaceId::ABSENT;
+    hedge.face_next_id = HedgeId::ABSENT;
+    hedge.face_prev_id = HedgeId::ABSENT;
+    hedge.radial_next_id = HedgeId::ABSENT;
+    hedge.radial_prev_id = HedgeId::ABSENT;
+    hedge.source_id = VertId::ABSENT;
 }
 
 pub(crate) fn disable_face_meta<R: RedgeContainers>(face: FaceId, mesh: &mut Redge<R>) {
     let face = &mut mesh.faces_meta[face.to_index()];
 
     face.is_active = false;
-    face.hedge_id = HedgeId::new_absent();
+    face.hedge_id = HedgeId::ABSENT;
 }
 
 fn cycle_endpoint_forward<R: RedgeContainers>(

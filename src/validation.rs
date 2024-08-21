@@ -130,7 +130,7 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
             );
         }
 
-        if edge.hedge_id != HedgeId::new_absent() {
+        if edge.hedge_id != HedgeId::ABSENT {
             let hedge_meta = &mesh.hedges_meta[edge.hedge_id.to_index()];
             if hedge_meta.edge_id != edge.id {
                 return RedgeCorrectness::InvalidEdge(
@@ -287,7 +287,7 @@ pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness 
             continue;
         }
 
-        debug_assert!(hedge.id != HedgeId::new_absent());
+        debug_assert!(hedge.id != HedgeId::ABSENT);
 
         let hedge_handle = mesh.hedge_handle(hedge.id);
 
