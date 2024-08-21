@@ -133,11 +133,9 @@ fn cycle_endpoint_forward<R: RedgeContainers>(
         seen.push(current);
         current = mesh.edges_meta[current.to_index()].cycle(vertex).next_edge;
         if current == start {
-            break;
+            return seen;
         }
     }
-
-    seen
 }
 
 fn cycle_endpoint_backward<R: RedgeContainers>(
