@@ -29,11 +29,7 @@ where
     }
 
     pub fn pop(&mut self) -> Option<(T, W)> {
-        if let Some(item) = self.queue.pop() {
-            Some((item.0, item.1 .0))
-        } else {
-            None
-        }
+        self.queue.pop().map(|item| (item.0, item.1 .0))
     }
 
     pub fn remove(&mut self, item: T) -> Option<(T, W)> {
