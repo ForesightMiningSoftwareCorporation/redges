@@ -33,10 +33,7 @@ where
     }
 
     pub fn remove(&mut self, item: T) -> Option<(T, W)> {
-        match self.queue.remove(&item) {
-            None => None,
-            Some((i, OrderedFloat(w))) => Some((i, w)),
-        }
+        self.queue.remove(&item).map(|(i, OrderedFloat(w))| (i, w))
     }
 
     pub fn is_empty(&self) -> bool {
