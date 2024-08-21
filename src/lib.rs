@@ -52,7 +52,7 @@ define_id_struct!(EdgeId);
 define_id_struct!(HedgeId);
 define_id_struct!(FaceId);
 
-pub struct Redge<C: RedgeContainers> {
+pub struct Redge<R: RedgeContainers> {
     vert_data: C::VertContainer,
     edge_data: C::EdgeContainer,
     face_data: C::FaceContainer,
