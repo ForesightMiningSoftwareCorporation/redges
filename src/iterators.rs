@@ -83,15 +83,12 @@ impl<'r, R: RedgeContainers> Iterator for VertexLinkEdgesIter<'r, R> {
     type Item = EdgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let edge = self.edge_iter.next();
-
-        match edge {
-            Some(edge_handle) => Some(EdgeHandle::new(
+        self.edge_iter.next().map(|edge_handle| {
+            EdgeHandle::new(
                 edge_handle.hedge().face_next().edge().id(),
                 self.edge_iter.redge,
-            )),
-            None => None,
-        }
+            )
+        })
     }
 }
 
