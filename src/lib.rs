@@ -1,5 +1,5 @@
 // TODO: For all handles and iterators that can panic, add a fallible API
-// warapper that won't crash.
+// wrapper that won't crash.
 
 use std::collections::BTreeMap;
 
