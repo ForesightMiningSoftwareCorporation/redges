@@ -12,6 +12,7 @@ pub mod iterators;
 pub mod mesh_deleter;
 mod p_queue;
 pub mod quadric_simplification;
+mod quadrics;
 pub mod validation;
 pub mod vert_handle;
 use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, VertData};

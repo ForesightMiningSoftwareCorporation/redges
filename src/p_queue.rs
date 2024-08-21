@@ -25,7 +25,7 @@ where
     }
 
     pub fn push(&mut self, item: T, weight: W) -> Option<OrderedFloat<W>> {
-        self.queue.push(item, OrderedFloat(weight))
+        self.queue.push(item, OrderedFloat(-weight))
     }
 
     pub fn pop(&mut self) -> Option<(T, W)> {
