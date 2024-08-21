@@ -160,12 +160,7 @@ fn set_equality<T>(set1: &BTreeSet<T>, set2: &BTreeSet<T>) -> bool
 where
     T: Eq,
 {
-    let mut equal = true;
-    for (a, b) in set1.iter().zip(set2.iter()) {
-        equal = equal && (a == b);
-    }
-
-    equal && set1.len() == set2.len()
+    set1 == set2
 }
 
 pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(
