@@ -40,10 +40,7 @@ macro_rules! define_id_struct {
             pub fn to_index(&self) -> usize {
                 self.0
             }
-
-            pub fn new_absent() -> Self {
-                Self(ABSENT)
-            }
+            const ABSENT: Self = Self(ABSENT);
         }
     };
 }
