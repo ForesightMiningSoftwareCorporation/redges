@@ -133,11 +133,9 @@ fn cycle_endpoint_forward<R: RedgeContainers>(
         seen.push(current);
         current = mesh.edges_meta[current.to_index()].cycle(vertex).next_edge;
         if current == start {
-            break;
+            return seen;
         }
     }
-
-    seen
 }
 
 fn cycle_endpoint_backward<R: RedgeContainers>(
@@ -153,23 +151,16 @@ fn cycle_endpoint_backward<R: RedgeContainers>(
         seen.push(current);
         current = mesh.edges_meta[current.to_index()].cycle(vertex).prev_edge;
         if current == start {
-            break;
+            return seen;
         }
     }
-
-    seen
 }
 
 fn set_equality<T>(set1: &BTreeSet<T>, set2: &BTreeSet<T>) -> bool
 where
     T: Eq,
 {
-    let mut equal = true;
-    for (a, b) in set1.iter().zip(set2.iter()) {
-        equal = equal && (a == b);
-    }
-
-    equal && set1.len() == set2.len()
+    set1 == set2
 }
 
 pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(

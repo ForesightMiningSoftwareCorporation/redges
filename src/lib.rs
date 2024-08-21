@@ -1,5 +1,5 @@
 // TODO: For all handles and iterators that can panic, add a fallible API
-// warapper that won't crash.
+// wrapper that won't crash.
 
 use std::collections::BTreeMap;
 
@@ -41,10 +41,7 @@ macro_rules! define_id_struct {
             pub fn to_index(&self) -> usize {
                 self.0
             }
-
-            pub fn new_absent() -> Self {
-                Self(ABSENT)
-            }
+            const ABSENT: Self = Self(ABSENT);
         }
     };
 }
@@ -56,7 +53,7 @@ define_id_struct!(EdgeId);
 define_id_struct!(HedgeId);
 define_id_struct!(FaceId);
 
-pub struct Redge<C: RedgeContainers> {
+pub struct Redge<R: RedgeContainers> {
     vert_data: C::VertContainer,
     edge_data: C::EdgeContainer,
     face_data: C::FaceContainer,
