@@ -151,11 +151,9 @@ fn cycle_endpoint_backward<R: RedgeContainers>(
         seen.push(current);
         current = mesh.edges_meta[current.to_index()].cycle(vertex).prev_edge;
         if current == start {
-            break;
+            return seen;
         }
     }
-
-    seen
 }
 
 fn set_equality<T>(set1: &BTreeSet<T>, set2: &BTreeSet<T>) -> bool
