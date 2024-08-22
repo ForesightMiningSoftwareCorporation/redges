@@ -1,0 +1,1 @@
+assets/loop_cube.obj filter=lfs diff=lfs merge=lfs -text

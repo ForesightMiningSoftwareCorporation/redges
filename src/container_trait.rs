@@ -13,12 +13,14 @@ pub trait PrimitiveContainer: Clone + Debug {
 
     fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, f: F);
 
+    fn resize(&mut self, new_size: usize);
+
     fn len(&self) -> usize;
 
     fn iterate(&self) -> impl Iterator<Item = &Self::PrimitiveData>;
 }
 
-impl<T: Clone + Debug> PrimitiveContainer for Vec<T> {
+impl<T: Default + Clone + Debug> PrimitiveContainer for Vec<T> {
     type PrimitiveData = T;
 
     fn get(&self, index: u64) -> &Self::PrimitiveData {
@@ -47,6 +49,10 @@ impl<T: Clone + Debug> PrimitiveContainer for Vec<T> {
 
     fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, f: F) {
         self.retain(f)
+    }
+
+    fn resize(&mut self, new_size: usize) {
+        self.resize(new_size, T::default());
     }
 
     fn iterate(&self) -> impl Iterator<Item = &Self::PrimitiveData> {
@@ -79,6 +85,8 @@ impl PrimitiveContainer for () {
         ()
     }
 
+    fn resize(&mut self, _new_size: usize) {}
+
     fn retain<F: FnMut(&Self::PrimitiveData) -> bool>(&mut self, _f: F) {}
 
     fn iterate(&self) -> impl Iterator<Item = &Self::PrimitiveData> {
@@ -88,4 +96,25 @@ impl PrimitiveContainer for () {
     fn len(&self) -> usize {
         0
     }
+}
+
+pub trait RedgeContainers {
+    type VertContainer: PrimitiveContainer;
+    type EdgeContainer: PrimitiveContainer;
+    type FaceContainer: PrimitiveContainer;
+}
+
+pub type VertData<R> = <<R as RedgeContainers>::VertContainer as PrimitiveContainer>::PrimitiveData;
+pub type EdgeData<R> = <<R as RedgeContainers>::EdgeContainer as PrimitiveContainer>::PrimitiveData;
+pub type FaceData<R> = <<R as RedgeContainers>::FaceContainer as PrimitiveContainer>::PrimitiveData;
+
+impl<V, E, F> RedgeContainers for (V, E, F)
+where
+    V: PrimitiveContainer,
+    E: PrimitiveContainer,
+    F: PrimitiveContainer,
+{
+    type VertContainer = V;
+    type EdgeContainer = E;
+    type FaceContainer = F;
 }
