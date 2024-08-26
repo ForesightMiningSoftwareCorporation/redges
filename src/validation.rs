@@ -3,7 +3,7 @@
 // to abstract meshes. These methods should work for those abstractions.
 // If we couple them to the objects it will be harder to do this.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     container_trait::{PrimitiveContainer, RedgeContainers},
@@ -249,6 +249,29 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
     }
 
     RedgeCorrectness::Correct
+}
+
+/// Returns the number of regular vertices
+pub fn count_regular_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
+    let mut regular_verts = 0;
+    for v in mesh.meta_verts() {
+        let valence = v.star_edges().count();
+        regular_verts += (valence == 6) as usize;
+    }
+
+    regular_verts
+}
+
+/// Compute how many vertices there are for each valence.
+pub fn vertex_valence_histogram<R: RedgeContainers>(mesh: &Redge<R>) -> BTreeMap<usize, usize> {
+    let mut histogram = BTreeMap::new();
+    for v in mesh.meta_verts() {
+        let valence = v.star_edges().count();
+        let val = histogram.entry(valence).or_default();
+        *val += 1;
+    }
+
+    histogram
 }
 
 #[derive(Debug, PartialEq, Eq)]

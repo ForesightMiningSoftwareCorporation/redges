@@ -1,6 +1,7 @@
 use container_trait::{FaceData, RedgeContainers};
 use iterators::{FaceLoopHedgeIter, FaceVertIterator};
 use linear_isomorphic::prelude::*;
+use std::default;
 use std::fmt::Debug;
 
 use crate::hedge_handle::HedgeHandle;
@@ -58,6 +59,7 @@ where
     fn area(&self) -> S;
     fn normal(&self) -> N;
     fn unit_normal(&self) -> N;
+    fn centroid(&self) -> V;
 }
 
 impl<'r, R: RedgeContainers, S> FaceMetrics<VertData<R>, VertData<R>, S> for FaceHandle<'r, R>
@@ -71,10 +73,9 @@ where
     }
 
     fn normal(&self) -> VertData<R> {
-        let mut iter = self.vertices();
-        let p1 = iter.next().unwrap().data().clone();
-        let p2 = iter.next().unwrap().data().clone();
-        let p3 = iter.next().unwrap().data().clone();
+        let p1 = self.hedge().source().data().clone();
+        let p2 = self.hedge().face_next().source().data().clone();
+        let p3 = self.hedge().face_prev().source().data().clone();
 
         let e1 = p2 - p1.clone();
         let e2 = p3 - p1;
@@ -84,5 +85,16 @@ where
 
     fn unit_normal(&self) -> VertData<R> {
         self.normal().normalized()
+    }
+
+    fn centroid(&self) -> VertData<R> {
+        let mut centroid = VertData::<R>::default();
+        let mut count = 0;
+        for v in self.vertices() {
+            centroid += v.data().clone();
+            count += 1;
+        }
+
+        centroid * (S::from(1.0).unwrap() / S::from(count).unwrap())
     }
 }
