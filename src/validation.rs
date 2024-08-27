@@ -253,13 +253,7 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
 
 /// Returns the number of regular vertices
 pub fn count_regular_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
-    let mut regular_verts = 0;
-    for v in mesh.meta_verts() {
-        let valence = v.star_edges().count();
-        regular_verts += (valence == 6) as usize;
-    }
-
-    regular_verts
+    mesh.meta_verts().map(|v| (v.star_edges().count() == 6) as usize).sum()
 }
 
 /// Compute how many vertices there are for each valence.
