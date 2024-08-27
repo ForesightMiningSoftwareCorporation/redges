@@ -105,7 +105,7 @@ where
 
     for i in 0..deleter.mesh.vert_data.len() {
         let pos = deleter.mesh.vert_data.get(i as u64).clone();
-        *deleter.mesh.vert_data.get_mut(i as u64) = pos * scale;
+        *deleter.mesh.vert_data.get_mut(i as u64) = pos * (S::from(1.0).unwrap() / scale);
     }
 
     deleter.end_deletion()
