@@ -301,7 +301,11 @@ impl<R: RedgeContainers> Redge<R> {
     }
 
     pub fn hedge_handle<'r>(&'r self, id: HedgeId) -> HedgeHandle<'r, R> {
-        assert!(id.to_index() < self.hedges_meta.len());
+        assert!(
+            id.to_index() < self.hedges_meta.len(),
+            "hedge id {:?} is invalid.",
+            id
+        );
         HedgeHandle::new(id, self)
     }
 
@@ -407,7 +411,7 @@ impl EdgeMetaData {
         } else if vert_id == self.vert_ids[1] {
             return &mut self.v2_cycle;
         } else {
-            panic!()
+            panic!("Vertex {:?} does not exist in edge {:?}.", vert_id, self.id)
         }
     }
 

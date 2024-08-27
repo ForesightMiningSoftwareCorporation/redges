@@ -2,11 +2,13 @@ use std::collections::HashMap;
 
 use crate::{
     container_trait::{PrimitiveContainer, RedgeContainers},
+    edge_handle,
     helpers::{
         disable_edge_meta, disable_face_meta, disable_hedge_meta, disable_vert_meta,
         join_radial_cycles, remove_edge_from_cycle, remove_hedge_from_radial,
     },
     validation::{correctness_state, RedgeCorrectness},
+    wavefront_loader::ObjData,
     EdgeId, FaceId, HedgeId, Redge, VertId,
 };
 
@@ -272,7 +274,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         // TODO: This is incorrect for non-triangular faces as one does not need to
         // remove the faces. Additional logic is needed to keep or restore those faces.
         self.remove_edge(edge_id);
-        debug_assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct,);
+        debug_assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct);
 
         let v2_edges: Vec<_> = self
             .mesh
@@ -303,24 +305,26 @@ impl<R: RedgeContainers> MeshDeleter<R> {
 
         // Make all things touching V2 now touch v1.
         for eid in &v2_edges {
-            let radials: Vec<_> = self
-                .mesh
-                .edge_handle(*eid)
-                .hedge()
-                .radial_neighbours()
-                .map(|h| h.id())
-                .collect();
+            let edge = self.mesh.edge_handle(*eid);
+            let hedge_id = edge.metadata().hedge_id;
+            *self.mesh.edges_meta[eid.to_index()].at(v2) = v1;
+
+            // In the case of a border edge, deleting the faces will have created edges with no hedges.
+            if hedge_id == HedgeId::ABSENT {
+                continue;
+            }
+
+            let edge = self.mesh.edge_handle(*eid);
+            let radials: Vec<_> = edge.hedge().radial_neighbours().map(|h| h.id()).collect();
             for radial in radials {
                 if self.mesh.hedges_meta[radial.to_index()].source_id == v2 {
                     self.mesh.hedges_meta[radial.to_index()].source_id = v1;
                 }
             }
-            *self.mesh.edges_meta[eid.to_index()].at(v2) = v1;
         }
 
         // Merge the endpoint vertex cycle.
         let edges: Vec<_> = v2_edges.iter().chain(v1_edges.iter()).collect();
-
         for i in 0..=edges.len() {
             let ep = edges[i % edges.len()];
             let en = edges[(i + 1) % edges.len()];
@@ -333,25 +337,36 @@ impl<R: RedgeContainers> MeshDeleter<R> {
 
         disable_vert_meta(v2, &mut self.mesh);
 
+        // Update orbiting hedges to all orbit the surviving edge.
         for [e1, e2] in edges_to_merge {
             let h1 = self.mesh.edges_meta[e1.to_index()].hedge_id;
             let h2 = self.mesh.edges_meta[e2.to_index()].hedge_id;
 
-            let [e2_v1, e2_v2] = self.mesh.edges_meta[e1.to_index()].vert_ids;
+            let [e2_v1, e2_v2] = self.mesh.edges_meta[e2.to_index()].vert_ids;
 
-            // Make all hedges of e2 point to e1.
-            let orbit: Vec<_> = self
-                .mesh
-                .edge_handle(e2)
-                .hedge()
-                .radial_neighbours()
-                .map(|h| h.id())
-                .collect();
-            for h in orbit {
-                self.mesh.hedges_meta[h.to_index()].edge_id = e1;
+            // Make all hedges of e2 point to e1 (if they exist).
+            let e2_handle = self.mesh.edge_handle(e2);
+            if e2_handle.metadata().hedge_id != HedgeId::ABSENT {
+                let orbit: Vec<_> = self
+                    .mesh
+                    .edge_handle(e2)
+                    .hedge()
+                    .radial_neighbours()
+                    .map(|h| h.id())
+                    .collect();
+
+                for h in orbit {
+                    self.mesh.hedges_meta[h.to_index()].edge_id = e1;
+                    self.mesh.edges_meta[e1.to_index()].hedge_id = h;
+                }
             }
 
-            join_radial_cycles(h1, h2, &mut self.mesh);
+            // debug_assert!(h1 != HedgeId::ABSENT || h2 != HedgeId::ABSENT);
+            // Only join radial cycles if both are not empty.
+            if h1 != HedgeId::ABSENT && h2 != HedgeId::ABSENT {
+                join_radial_cycles(h1, h2, &mut self.mesh);
+            }
+
             remove_edge_from_cycle(e2, crate::Endpoint::V1, &mut self.mesh);
             remove_edge_from_cycle(e2, crate::Endpoint::V2, &mut self.mesh);
             disable_edge_meta(e2, &mut self.mesh);

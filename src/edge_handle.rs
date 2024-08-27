@@ -7,6 +7,7 @@ use crate::vert_handle::VertHandle;
 use crate::{
     container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, Redge, StarCycleNode, VertId,
 };
+use crate::{HedgeId, ABSENT};
 
 pub struct EdgeHandle<'r, R: RedgeContainers> {
     id: EdgeId,
@@ -47,7 +48,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         self.metadata().is_active
     }
 
-    fn metadata(&self) -> &EdgeMetaData {
+    pub(crate) fn metadata(&self) -> &EdgeMetaData {
         &self.redge.edges_meta[self.id.to_index()]
     }
 
@@ -91,13 +92,18 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
         // If vertices adjacent to the opposite vertices to the edge overlap,
         // this edge cannot be collapsed.
-        // TODOD: this logic was deisgned for triangular faces, it;s not certian it works on polygonal ones.
+        // TODOD: this logic was designed for triangular faces, it's not certain that it works on polygonal ones.
         let set1: BTreeSet<VertId> = BTreeSet::from_iter(v1.neighbours().map(|v| v.id()));
         let set2: BTreeSet<VertId> = BTreeSet::from_iter(v2.neighbours().map(|v| v.id()));
 
         let count = set1.intersection(&set2).count();
 
-        count == 2
+        count == 2 && !(self.v1().is_in_boundary() && self.v2().is_in_boundary())
+    }
+
+    pub fn is_boundary(&self) -> bool {
+        self.redge.edges_meta[self.id.to_index()].hedge_id == HedgeId::ABSENT
+            || self.hedge().radial_neighbours().count() <= 1
     }
 }
 

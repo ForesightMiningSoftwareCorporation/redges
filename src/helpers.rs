@@ -23,7 +23,6 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
 
     debug_assert!(cycle.prev_edge != edge_id);
     debug_assert!(cycle.next_edge != edge_id);
-    debug_assert!(cycle.next_edge != cycle.prev_edge);
 
     // Attach the prior and next pointers to each other, thus eliminating
     // all references to the current edge.
@@ -31,13 +30,11 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
     prior_cycle.next_edge = cycle.next_edge;
     debug_assert!(prior_cycle.prev_edge != edge_id);
     debug_assert!(prior_cycle.next_edge != edge_id);
-    debug_assert!(prior_cycle.prev_edge != prior_cycle.next_edge);
 
     let next_cycle = mesh.edges_meta[cycle.next_edge.to_index()].cycle_mut(active_vertex);
     next_cycle.prev_edge = cycle.prev_edge;
     debug_assert!(next_cycle.prev_edge != edge_id);
     debug_assert!(next_cycle.next_edge != edge_id);
-    debug_assert!(next_cycle.prev_edge != next_cycle.next_edge);
 }
 
 pub(crate) fn join_radial_cycles<R: RedgeContainers>(
@@ -73,7 +70,13 @@ pub(crate) fn remove_hedge_from_radial<R: RedgeContainers>(hedge_id: HedgeId, me
     mesh.hedges_meta[prev.to_index()].radial_next_id = next;
 
     let eid = mesh.hedges_meta[hedge_id.to_index()].edge_id;
-    mesh.edges_meta[eid.to_index()].hedge_id = next;
+    // If the next and prev point to this hedge, this hedge must have been the last one orbiting the edge.
+    mesh.edges_meta[eid.to_index()].hedge_id = if next == hedge_id {
+        debug_assert!(prev == hedge_id);
+        HedgeId::ABSENT
+    } else {
+        next
+    };
 }
 
 pub(crate) fn disable_vert_meta<R: RedgeContainers>(vert_id: VertId, mesh: &mut Redge<R>) {
