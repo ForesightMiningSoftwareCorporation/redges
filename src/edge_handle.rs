@@ -92,7 +92,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
         // If vertices adjacent to the opposite vertices to the edge overlap,
         // this edge cannot be collapsed.
-        // TODOD: this logic was designed for triangular faces, it's not certain that it works on polygonal ones.
+        // TODO: this logic was designed for triangular faces, it;s not certain it works on polygonal ones.
         let set1: BTreeSet<VertId> = BTreeSet::from_iter(v1.neighbours().map(|v| v.id()));
         let set2: BTreeSet<VertId> = BTreeSet::from_iter(v2.neighbours().map(|v| v.id()));
 
