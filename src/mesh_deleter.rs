@@ -249,6 +249,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
     // Note: There's no doubt this could be made more efficient, but
     // protecting the invariants is very hard. Don't touch this function
     // unless there's a REALLY compelling case it needs to be done.
+    /// Currently only works for triangular faces.
     pub fn collapse_edge(&mut self, edge_id: EdgeId) -> VertId {
         debug_assert!(self
             .mesh
@@ -392,7 +393,6 @@ mod tests {
         debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
 
         let mut deleter = MeshDeleter::start_deletion(redge);
-        // deleter.remove_edge(EdgeId(0));
         deleter.collapse_edge(EdgeId(0));
 
         let state = manifold_state(deleter.mesh());

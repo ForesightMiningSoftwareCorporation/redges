@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+pub mod binary_heap;
 pub mod container_trait;
 pub mod edge_handle;
 pub mod face_handle;
@@ -10,7 +11,6 @@ pub mod hedge_handle;
 pub mod helpers;
 pub mod iterators;
 pub mod mesh_deleter;
-mod p_queue;
 pub mod quadric_simplification;
 mod quadrics;
 pub mod validation;

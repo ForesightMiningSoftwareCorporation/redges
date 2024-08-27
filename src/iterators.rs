@@ -1,6 +1,8 @@
+use std::collections::HashSet;
+
 use crate::{
-    container_trait::RedgeContainers, edge_handle::EdgeHandle, hedge_handle::HedgeHandle,
-    vert_handle::VertHandle, EdgeId, HedgeId, Redge, VertId,
+    container_trait::RedgeContainers, edge_handle::EdgeHandle, face_handle::FaceHandle,
+    hedge_handle::HedgeHandle, vert_handle::VertHandle, EdgeId, FaceId, HedgeId, Redge, VertId,
 };
 
 pub struct VertexStarVerticesIter<'r, R: RedgeContainers> {
@@ -52,6 +54,16 @@ impl<'r, R: RedgeContainers> VertexStarEdgesIter<'r, R> {
             start: true,
         }
     }
+
+    pub(crate) fn clone_state(&self) -> Self {
+        Self {
+            start_edge: self.start_edge,
+            current_edge: self.current_edge,
+            focused_vertex: self.focused_vertex,
+            start: self.start,
+            redge: self.redge,
+        }
+    }
 }
 
 impl<'r, R: RedgeContainers> Iterator for VertexStarEdgesIter<'r, R> {
@@ -89,6 +101,56 @@ impl<'r, R: RedgeContainers> Iterator for VertexLinkEdgesIter<'r, R> {
                 self.edge_iter.redge,
             )
         })
+    }
+}
+
+pub struct VertIncidentFacesIterator<'r, R: RedgeContainers> {
+    edge_iter: VertexStarEdgesIter<'r, R>,
+    current_radial_iter: RadialHedgeIter<'r, R>,
+    seen: HashSet<FaceId>,
+    redge: &'r Redge<R>,
+}
+
+impl<'r, R: RedgeContainers> VertIncidentFacesIterator<'r, R> {
+    pub fn new(vert_id: VertId, redge: &'r Redge<R>) -> Self {
+        Self {
+            edge_iter: VertexStarEdgesIter::new(vert_id, redge),
+            current_radial_iter: RadialHedgeIter::new(
+                redge.vert_handle(vert_id).edge().hedge().id(),
+                redge,
+            ),
+            seen: HashSet::new(),
+            redge,
+        }
+    }
+}
+
+impl<'r, R: RedgeContainers> Iterator for VertIncidentFacesIterator<'r, R> {
+    type Item = FaceHandle<'r, R>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Try to find the next unseen face incident on this edge.
+        if let Some(h) = self
+            .current_radial_iter
+            .find(|h| self.seen.insert(h.face().id()))
+        {
+            return Some(h.face());
+        }
+
+        // If no such face exists, try each edge until we find an unseen incident face or we run out of edges.
+        while let Some(e) = self.edge_iter.next() {
+            self.current_radial_iter = RadialHedgeIter::new(e.hedge().id(), self.redge);
+
+            if let Some(f) = self
+                .current_radial_iter
+                .find(|h| self.seen.insert(h.face().id()))
+                .map(|h| h.face())
+            {
+                return Some(f);
+            }
+        }
+
+        None
     }
 }
 

@@ -85,21 +85,13 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
     /// Tests if collapsing the current edge would violate topology. If it
     /// returns true collapsing the edge is safe.
     // TODO: this is assuming triangular faces right now.
-    // TODO: Not 100% sure if this is fully correct, non-manifoldness is
-    // harder to test for.
     pub fn can_collapse(&self) -> bool {
         let v1 = self.v1();
         let v2 = self.v2();
 
-        let v1_valence = v1.star_edges().count();
-        let v2_valence = v2.star_edges().count();
-
-        if v1_valence <= 3 || v2_valence <= 3 {
-            return false;
-        }
         // If vertices adjacent to the opposite vertices to the edge overlap,
         // this edge cannot be collapsed.
-        // Note: this logic ONLY works on triangular faces.
+        // TODO: this logic was designed for triangular faces, it;s not certain it works on polygonal ones.
         let set1: BTreeSet<VertId> = BTreeSet::from_iter(v1.neighbours().map(|v| v.id()));
         let set2: BTreeSet<VertId> = BTreeSet::from_iter(v2.neighbours().map(|v| v.id()));
 

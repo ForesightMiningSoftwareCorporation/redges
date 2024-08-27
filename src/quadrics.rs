@@ -110,7 +110,7 @@ where
             return Self::default();
         }
 
-        n = (S::from(1.0).unwrap() / mag) * n;
+        n = n.normalized();
 
         let distance = n.dot(&v0);
 
@@ -155,46 +155,6 @@ where
     }
 
     pub fn optimize(&self) -> Option<(S, V)> {
-        // let a = Vec3::new(self.nxx, self.nxy, self.nxz);
-        // let b = Vec3::new(self.nxy, self.nyy, self.nyz);
-        // let c = Vec3::new(self.nxz, self.nyz, self.nzz);
-
-        // let det = Mat3 {
-        //     x_axis: a,
-        //     y_axis: b,
-        //     z_axis: c,
-        // }
-        // .determinant();
-
-        // if det.is_degenerate_divisor() {
-        //     return None;
-        // }
-
-        // let det_x = Mat3 {
-        //     x_axis: -self.dn,
-        //     y_axis: b,
-        //     z_axis: c,
-        // }
-        // .determinant();
-        // let det_y = Mat3 {
-        //     x_axis: a,
-        //     y_axis: -self.dn,
-        //     z_axis: c,
-        // }
-        // .determinant();
-        // let det_z = Mat3 {
-        //     x_axis: a,
-        //     y_axis: b,
-        //     z_axis: -self.dn,
-        // }
-        // .determinant();
-
-        // let x = det_x / det;
-        // let y = det_y / det;
-        // let z = det_z / det;
-
-        // let point = Vec3::new(x, y, z);
-        // Some((self.error(point), point))
         let a = self.nxx;
         let b = self.nxy;
         let c = self.nxz;
@@ -223,14 +183,16 @@ where
         if is_degenerate_divisor(det) {
             return None;
         }
-        let denom = S::from(1.0).unwrap() / det;
+        let denom = det;
         let nom0 = r0 * (df - e * e) + r1 * ce_bf + r2 * be_cd;
         let nom1 = r0 * ce_bf + r1 * (af - c * c) + r2 * bc_ae;
         let nom2 = r0 * be_cd + r1 * bc_ae + r2 * (ad - b * b);
 
         let mut point = V::default();
         point.set_subset(&[nom0, nom1, nom2]);
-        point = point * denom;
+        point[0] = point[0] / denom;
+        point[1] = point[1] / denom;
+        point[2] = point[2] / denom;
 
         Some((self.error(point.clone()), point))
     }
