@@ -84,7 +84,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
     }
 
     /// Tests if collapsing the current edge would violate topology. If it
-    /// returns true collapsing the edge is safe.
+    /// returns true, collapsing the edge is safe.
     // TODO: this is assuming triangular faces right now.
     pub fn can_collapse(&self) -> bool {
         let v1 = self.v1();
@@ -92,18 +92,35 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
         // If vertices adjacent to the opposite vertices to the edge overlap,
         // this edge cannot be collapsed.
-        // TODO: this logic was designed for triangular faces, it;s not certain it works on polygonal ones.
+        // TODO: this logic was designed for triangular faces, it's not certain it works on polygonal ones.
         let set1: BTreeSet<VertId> = BTreeSet::from_iter(v1.neighbours().map(|v| v.id()));
         let set2: BTreeSet<VertId> = BTreeSet::from_iter(v2.neighbours().map(|v| v.id()));
 
         let count = set1.intersection(&set2).count();
 
-        count == 2 && !(self.v1().is_in_boundary() && self.v2().is_in_boundary())
+        // Imagine, for example a triangulated strip:
+        // *---*
+        // |\  |
+        // | \ |
+        // |  \|
+        // *---* <---- Bad idea to collapse this edge.
+        // |\  |
+        // | \ |
+        // |  \|
+        // *---*
+        // Collapsing the middle edge would create degenerate geometry.
+        let both_endpoints_are_in_boundary =
+            self.v1().is_in_boundary() && self.v2().is_in_boundary();
+        count == 2 || (both_endpoints_are_in_boundary && self.is_boundary())
     }
 
     pub fn is_boundary(&self) -> bool {
         self.redge.edges_meta[self.id.to_index()].hedge_id == HedgeId::ABSENT
             || self.hedge().radial_neighbours().count() <= 1
+    }
+
+    pub fn has_hedge(&self) -> bool {
+        self.metadata().hedge_id != HedgeId::ABSENT
     }
 }
 

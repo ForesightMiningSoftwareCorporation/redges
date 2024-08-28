@@ -332,6 +332,10 @@ impl<R: RedgeContainers> Redge<R> {
         self.face_data.get_mut(id.to_index() as u64)
     }
 
+    /// If you call this in the middle of deletion operations, innactive vertices will still exist.
+    /// Since the defragmentation won't be applied until destruction of the deleter, these vertices
+    /// will be exported, despite being innactive, to preserve indexing. So if you encounter
+    /// ghost or nan vertices in the returned data, check whether those vertices are innactive.
     pub fn to_face_list(&self) -> (Vec<VertData<R>>, Vec<Vec<usize>>) {
         let verts = self.vert_data.iterate().cloned().collect();
         let mut faces = Vec::with_capacity(self.faces_meta.len());

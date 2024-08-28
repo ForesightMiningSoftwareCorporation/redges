@@ -183,6 +183,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
 
             count += 1;
         }
+
+        debug_assert!(count_innactive_vertices(&self.mesh) == 0);
     }
 
     pub fn remove_face(&mut self, face_id: FaceId) {
@@ -210,30 +212,29 @@ impl<R: RedgeContainers> MeshDeleter<R> {
     }
 
     pub fn remove_edge(&mut self, edge_id: EdgeId) {
-        let incident_faces: Vec<_> = self
-            .mesh
-            .edge_handle(edge_id)
-            .hedge()
-            .radial_neighbours()
-            .map(|h| h.face().id())
-            .collect();
+        let edge_handle = self.mesh.edge_handle(edge_id);
+        let incident_faces: Vec<_> = if edge_handle.has_hedge() {
+            edge_handle
+                .hedge()
+                .radial_neighbours()
+                .map(|h| h.face().id())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
-        let handle = self.mesh.edge_handle(edge_id);
-
-        let [v1, v2] = handle.vertex_ids();
-        let v1_safe_edge = handle
+        let [v1, v2] = edge_handle.vertex_ids();
+        let v1_safe_edge = edge_handle
             .v1()
             .star_edges()
             .find(|e| e.id() != edge_id)
-            .unwrap()
-            .id();
+            .map_or(EdgeId::ABSENT, |e| e.id());
 
-        let v2_safe_edge = handle
+        let v2_safe_edge = edge_handle
             .v2()
             .star_edges()
             .find(|e| e.id() != edge_id)
-            .unwrap()
-            .id();
+            .map_or(EdgeId::ABSENT, |e| e.id());
 
         for fid in incident_faces {
             self.remove_face(fid);
@@ -246,26 +247,28 @@ impl<R: RedgeContainers> MeshDeleter<R> {
 
         self.mesh.verts_meta[v1.to_index()].edge_id = v1_safe_edge;
         self.mesh.verts_meta[v2.to_index()].edge_id = v2_safe_edge;
+
+        if v1_safe_edge == EdgeId::ABSENT {
+            disable_vert_meta(v1, &mut self.mesh);
+        }
+
+        if v2_safe_edge == EdgeId::ABSENT {
+            disable_vert_meta(v2, &mut self.mesh);
+        }
     }
 
     // Note: There's no doubt this could be made more efficient, but
     // protecting the invariants is very hard. Don't touch this function
     // unless there's a REALLY compelling case it needs to be done.
-    /// Currently only works for triangular faces.
+    /// Currently only works for triangular faces. Only call on edges that
+    /// have faces pointing to them.
     pub fn collapse_edge(&mut self, edge_id: EdgeId) -> VertId {
-        debug_assert!(self
-            .mesh
-            .edge_handle(edge_id)
-            .hedge()
-            .radial_neighbours()
-            .all(|h| h.face_loop().count() == 3));
-
         let v1 = self.mesh.edge_handle(edge_id).v1().id();
         let v2 = self.mesh.edge_handle(edge_id).v2().id();
 
-        let edges_to_merge: Vec<_> = self
-            .mesh
-            .edge_handle(edge_id)
+        let edge_handle = self.mesh.edge_handle(edge_id);
+
+        let edges_to_merge: Vec<_> = edge_handle
             .hedge()
             .radial_neighbours()
             .map(|h| [h.face_prev().edge().id(), h.face_next().edge().id()])

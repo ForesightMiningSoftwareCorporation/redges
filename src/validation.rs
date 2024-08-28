@@ -251,9 +251,24 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
     RedgeCorrectness::Correct
 }
 
-/// Returns the number of regular vertices
+/// A regular vertex is a vertex with valence 6.
 pub fn count_regular_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
-    mesh.meta_verts().map(|v| (v.star_edges().count() == 6) as usize).sum()
+    mesh.meta_verts()
+        .map(|v| (v.star_edges().count() == 6) as usize)
+        .sum()
+}
+
+pub fn count_isolated_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
+    mesh.meta_verts()
+        .map(|v| (v.star_edges().count() == 0) as usize)
+        .sum()
+}
+
+pub fn count_innactive_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
+    mesh.verts_meta
+        .iter()
+        .map(|v| (!v.is_active) as usize)
+        .sum()
 }
 
 /// Compute how many vertices there are for each valence.

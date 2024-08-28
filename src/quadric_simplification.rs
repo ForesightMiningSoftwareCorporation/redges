@@ -84,11 +84,20 @@ where
         //     &format!("out/edge_{}.obj", simplify_count).to_string(),
         // );
 
-        let vid = deleter.collapse_edge(eid);
+        // let edge_handle = deleter.mesh().edge_handle(eid);
 
-        // Update the position of the collapsed vertex to that wich minimizes the
-        // quadric error.
-        *deleter.mesh().vert_data(vid) = optimum;
+        let vid = if edge_handle.has_hedge() {
+            let vid = deleter.collapse_edge(eid);
+            // Update the position of the collapsed vertex to that wich minimizes the
+            // quadric error.
+            *deleter.mesh().vert_data(vid) = optimum;
+
+            vid
+        } else {
+            // In this case the edge is an isolated edge. So just remove it and skip.
+            deleter.remove_edge(eid);
+            continue;
+        };
 
         // let (vs, fs) = deleter.mesh.to_face_list();
         // ObjData::export(
@@ -150,6 +159,10 @@ where
     S: RealField + Mul<VertData<R>, Output = VertData<R>> + TotalOrder,
     VertData<R>: InnerSpace<S>,
 {
+    // Id the edge does not have a hedge, it's an isolated one, we REALLY should be collapsing this one.
+    if !edge.has_hedge() {
+        return (S::from(S::min_value()).unwrap(), edge.v1().data().clone());
+    }
     // When the edge is touching the boundary but it is not in the boundary, we must be careful to
     // not move the boundary.
     if edge.v1().is_in_boundary() && !edge.v2().is_in_boundary() {
@@ -229,6 +242,9 @@ where
     S: FloatCore + RealField + nalgebra::ComplexField,
     VertData<R>: InnerSpace<S>,
 {
+    if !edge.has_hedge() {
+        return false;
+    }
     // These are all the faces adjacent to the edge.
     let mut adjacent_faces: BTreeSet<_> = edge
         .v1()

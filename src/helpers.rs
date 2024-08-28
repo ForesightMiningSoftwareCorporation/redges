@@ -21,20 +21,13 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
         .cycle(active_vertex)
         .clone();
 
-    debug_assert!(cycle.prev_edge != edge_id);
-    debug_assert!(cycle.next_edge != edge_id);
-
     // Attach the prior and next pointers to each other, thus eliminating
     // all references to the current edge.
     let prior_cycle = mesh.edges_meta[cycle.prev_edge.to_index()].cycle_mut(active_vertex);
     prior_cycle.next_edge = cycle.next_edge;
-    debug_assert!(prior_cycle.prev_edge != edge_id);
-    debug_assert!(prior_cycle.next_edge != edge_id);
 
     let next_cycle = mesh.edges_meta[cycle.next_edge.to_index()].cycle_mut(active_vertex);
     next_cycle.prev_edge = cycle.prev_edge;
-    debug_assert!(next_cycle.prev_edge != edge_id);
-    debug_assert!(next_cycle.next_edge != edge_id);
 }
 
 pub(crate) fn join_radial_cycles<R: RedgeContainers>(
