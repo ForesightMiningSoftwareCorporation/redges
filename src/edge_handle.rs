@@ -79,7 +79,12 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         match self.vertex_endpoint(vert_id) {
             EdgeVertexType::V1 => self.metadata().v1_cycle.clone(),
             EdgeVertexType::V2 => self.metadata().v2_cycle.clone(),
-            EdgeVertexType::NotInEdge => panic!("Vertex id not part of this edge"),
+            EdgeVertexType::NotInEdge => panic!(
+                "Vertex id {:?} not part of edge with id {:?} and pointing to {:?}.",
+                vert_id,
+                self.id,
+                self.vertex_ids(),
+            ),
         }
     }
 

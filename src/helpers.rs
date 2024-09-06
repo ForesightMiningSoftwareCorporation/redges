@@ -25,7 +25,6 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
     // all references to the current edge.
     let prior_cycle = mesh.edges_meta[cycle.prev_edge.to_index()].cycle_mut(active_vertex);
     prior_cycle.next_edge = cycle.next_edge;
-
     let next_cycle = mesh.edges_meta[cycle.next_edge.to_index()].cycle_mut(active_vertex);
     next_cycle.prev_edge = cycle.prev_edge;
 }

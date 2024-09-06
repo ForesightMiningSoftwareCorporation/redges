@@ -5,8 +5,11 @@ use crate::{
     container_trait::{PrimitiveContainer, VertData},
     edge_handle::EdgeHandle,
     face_handle::{FaceHandle, FaceMetrics},
+    mesh_deleter::MeshDeleter,
     quadrics::Quadric,
+    validation::{correctness_state, RedgeCorrectness},
     vert_handle::VertHandle,
+    wavefront_loader::ObjData,
     EdgeId,
 };
 use linear_isomorphic::prelude::*;
@@ -17,12 +20,35 @@ use crate::{container_trait::RedgeContainers, Redge};
 
 const EDGE_WEIGHT: f32 = 100_000.0;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum SimplificationStrategy {
+    /// Stop simplifying when no valid edges exist for preserving topology (closed meshes remain closed).
+    Conservative,
+    /// Do whatever it takes to simplify geoemtry for as long as there is geometry to simplify (may introduce boundaries on
+    /// otherwise closed meshes).
+    Aggressive,
+}
+
+pub struct QuadricSimplificationConfig {
+    pub strategy: SimplificationStrategy,
+    pub target_face_count: usize,
+}
+
+impl Default for QuadricSimplificationConfig {
+    fn default() -> Self {
+        Self {
+            strategy: SimplificationStrategy::Conservative,
+            target_face_count: 10_000,
+        }
+    }
+}
+
 // Theory: https://www.cs.cmu.edu/~./garland/Papers/quadrics.pdf
 //         https://hhoppe.com/newqem.pdf
 /// Uses quadric distances to reduce the total number of edges by a an amount
 /// equal to `simplify_count`. For example if `simplify_count` is 1000 then
 /// 1000 edges will be collapsed.
-pub fn quadric_simplify<S, R>(mut mesh: Redge<R>, mut simplify_count: usize) -> Redge<R>
+pub fn quadric_simplify<S, R>(mut mesh: Redge<R>, config: QuadricSimplificationConfig) -> Redge<R>
 where
     R: RedgeContainers,
     S: RealField
@@ -46,11 +72,13 @@ where
     let mut queue = initialize_queue::<S, R>(&mesh);
 
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
-    while !queue.is_empty() && simplify_count > 0 {
+    let mut collpased_count = 0;
+    while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
         let (_cost, id) = queue.pop().unwrap();
         let eid = EdgeId(id as usize);
 
         let edge_handle = deleter.mesh().edge_handle(eid);
+
         if !edge_handle.is_active() || !edge_handle.can_collapse() {
             continue;
         }
@@ -60,7 +88,7 @@ where
             continue;
         }
 
-        simplify_count -= 1;
+        collpased_count += 1;
 
         let edge_handle = deleter.mesh().edge_handle(eid);
 
@@ -72,19 +100,28 @@ where
             queue.remove(e.id().to_index() as u32);
         }
 
-        // let v1 = edge_handle.v1().data().clone();
-        // let v2 = edge_handle.v2().data().clone();
-        // let (vs, fs) = deleter.mesh.to_face_list();
-        // ObjData::export(
-        //     &(&vs, &fs),
-        //     &format!("out/before_mesh_{}.obj", simplify_count).to_string(),
-        // );
-        // ObjData::export(
-        //     &(&vec![v1, v2], &vec![[0, 1]]),
-        //     &format!("out/edge_{}.obj", simplify_count).to_string(),
-        // );
+        if collpased_count % 10000 == 0 {
+            let v1 = edge_handle.v1().data().clone();
+            let v2 = edge_handle.v2().data().clone();
+            let (vs, fs) = deleter.mesh.to_face_list();
 
-        // let edge_handle = deleter.mesh().edge_handle(eid);
+            println!("{} {}", collpased_count, deleter.active_face_count());
+            ObjData::export(
+                &(&vs, &fs),
+                &format!("out/before_mesh_{}.obj", collpased_count).to_string(),
+            );
+            // ObjData::export(
+            //     &(&vec![v1, v2.clone()], &vec![[0, 1]]),
+            //     &format!("out/edge_{}.obj", collpased_count).to_string(),
+            // );
+
+            // ObjData::export(
+            //     &vec![v2],
+            //     &format!("out/endpoint_v2_{}.obj", collpased_count).to_string(),
+            // );
+        }
+
+        let edge_handle = deleter.mesh().edge_handle(eid);
 
         let vid = if edge_handle.has_hedge() {
             let vid = deleter.collapse_edge(eid);
@@ -98,6 +135,8 @@ where
             deleter.remove_edge(eid);
             continue;
         };
+
+        debug_assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
 
         // let (vs, fs) = deleter.mesh.to_face_list();
         // ObjData::export(
@@ -115,6 +154,39 @@ where
     for i in 0..deleter.mesh.vert_data.len() {
         let pos = deleter.mesh.vert_data.get(i as u64).clone();
         *deleter.mesh.vert_data.get_mut(i as u64) = pos * (S::from(1.0).unwrap() / scale);
+    }
+
+    let stage_2 = deleter.end_deletion();
+    debug_assert!(correctness_state(&stage_2) == RedgeCorrectness::Correct);
+
+    let mut degenerate_queue = initialize_queue(&stage_2);
+    let mut deleter = MeshDeleter::start_deletion(stage_2);
+    while let Some((_, eid)) = degenerate_queue.pop() {
+        if config.strategy == SimplificationStrategy::Aggressive
+            && deleter.active_face_count() <= config.target_face_count
+        {
+            break;
+        }
+        collpased_count += 1;
+        // let (vs, fs) = deleter.mesh.to_face_list();
+        // ObjData::export(
+        //     &(&vs, &fs),
+        //     &format!("out/before_mesh_{}.obj", collpased_count).to_string(),
+        // );
+
+        // let edge_handle = deleter.mesh().edge_handle(EdgeId(eid as usize));
+        // let v1 = edge_handle.v1().data().clone();
+        // let v2 = edge_handle.v2().data().clone();
+        // ObjData::export(
+        //     &(&vec![v1, v2], &vec![[0, 1]]),
+        //     &format!("out/edge_{}.obj", simplify_count).to_string(),
+        // );
+
+        let eid = EdgeId(eid as usize);
+        if deleter.mesh.edges_meta[eid.to_index()].is_active {
+            deleter.remove_edge(eid);
+            debug_assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
+        }
     }
 
     deleter.end_deletion()
@@ -159,6 +231,13 @@ where
     S: RealField + Mul<VertData<R>, Output = VertData<R>> + TotalOrder,
     VertData<R>: InnerSpace<S>,
 {
+    // If this topological operation would break the mesh, add a ludicrous cost.
+    if !edge.can_collapse() {
+        return (
+            S::from(EDGE_WEIGHT * 1_000_000.).unwrap(),
+            (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap(),
+        );
+    }
     // Id the edge does not have a hedge, it's an isolated one, we REALLY should be collapsing this one.
     if !edge.has_hedge() {
         return (S::from(S::min_value()).unwrap(), edge.v1().data().clone());
@@ -315,7 +394,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_quadric_simplification() {
+    fn test_quadric_simplification_closed() {
         let ObjData {
             vertices,
             vertex_face_indices,
@@ -338,7 +417,13 @@ mod tests {
         );
 
         let start = Instant::now();
-        let redge = quadric_simplify(redge, 145000);
+        let redge = quadric_simplify(
+            redge,
+            QuadricSimplificationConfig {
+                strategy: SimplificationStrategy::Aggressive,
+                target_face_count: 0,
+            },
+        );
         let duration = start.elapsed();
         println!("Time elapsed in expensive_function() is: {:?}", duration);
 
@@ -369,7 +454,13 @@ mod tests {
         );
 
         let start = Instant::now();
-        let redge = quadric_simplify(redge, 10000);
+        let redge = quadric_simplify(
+            redge,
+            QuadricSimplificationConfig {
+                strategy: SimplificationStrategy::Aggressive,
+                target_face_count: 0,
+            },
+        );
         let duration = start.elapsed();
         println!("Time elapsed in expensive_function() is: {:?}", duration);
 
