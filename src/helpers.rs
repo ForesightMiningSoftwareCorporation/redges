@@ -1,11 +1,13 @@
 //! WARNING: These functions can and will break invariants of the Redge
 //! use with extreme care.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, ops::Mul};
+
+use linear_isomorphic::{InnerSpace, RealField, VectorSpace};
 
 use crate::{
-    container_trait::RedgeContainers, EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode,
-    VertId,
+    container_trait::{RedgeContainers, VertData},
+    EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode, VertId,
 };
 
 pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
@@ -29,26 +31,91 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
     next_cycle.prev_edge = cycle.prev_edge;
 }
 
-pub(crate) fn join_radial_cycles<R: RedgeContainers>(
-    h1: HedgeId,
-    h2: HedgeId,
+/// Join two edge endpoint cycles. i.e. Their doubly connected, circular,
+/// linked lists are now one. Note, be very conscious of the input order,
+/// make sure the `start` parameter is an entirely topologically valid
+/// edge.
+pub(crate) fn join_vertex_cycles<R: RedgeContainers>(
+    head1: EdgeId,
+    head2: EdgeId,
     mesh: &mut Redge<R>,
 ) {
-    let next = mesh.hedges_meta[h1.to_index()].radial_next_id;
-    let prev = mesh.hedges_meta[h2.to_index()].radial_prev_id;
+    let pa_meta = &mesh.edges_meta[head1.to_index()];
+    let qa_meta = &mesh.edges_meta[head2.to_index()];
 
-    mesh.hedges_meta[next.to_index()].radial_prev_id = prev;
-    mesh.hedges_meta[prev.to_index()].radial_next_id = next;
+    let vertex = pa_meta
+        .topology_intersection(qa_meta)
+        .expect("Tried to call internal `join_vertex_cycles` with non-overlapping vertices.");
 
-    // Handle self referential cases.
-    if next == h1 {
-        mesh.hedges_meta[h1.to_index()].radial_prev_id = h2;
-        mesh.hedges_meta[h1.to_index()].radial_next_id = h2;
+    let t1 = mesh.edges_meta[head1.to_index()]
+        .cycle(vertex)
+        .clone()
+        .prev_edge;
+
+    let t2 = mesh.edges_meta[head2.to_index()]
+        .cycle(vertex)
+        .clone()
+        .prev_edge;
+
+    let cycle = mesh.edges_meta[head1.to_index()].cycle_mut(vertex);
+    cycle.prev_edge = t2;
+    let cycle = mesh.edges_meta[t2.to_index()].cycle_mut(vertex);
+    cycle.next_edge = head1;
+
+    let cycle = mesh.edges_meta[t1.to_index()].cycle_mut(vertex);
+    cycle.next_edge = head2;
+    let cycle = mesh.edges_meta[head2.to_index()].cycle_mut(vertex);
+    cycle.prev_edge = t1;
+}
+
+fn _collect_forward_cycle<R: RedgeContainers>(
+    start: EdgeId,
+    vert: VertId,
+    mesh: &mut Redge<R>,
+) -> Vec<EdgeId> {
+    let mut collected = vec![start];
+    let mut current = start;
+    loop {
+        current = mesh.edges_meta[current.to_index()].cycle(vert).next_edge;
+        if current == start {
+            break;
+        }
+        collected.push(current);
     }
-    if prev == h2 {
-        mesh.hedges_meta[h2.to_index()].radial_prev_id = h1;
-        mesh.hedges_meta[h2.to_index()].radial_next_id = h1;
+
+    collected
+}
+
+fn _collect_backward_cycle<R: RedgeContainers>(
+    start: EdgeId,
+    vert: VertId,
+    mesh: &mut Redge<R>,
+) -> Vec<EdgeId> {
+    let mut collected = vec![start];
+    let mut current = start;
+    loop {
+        current = mesh.edges_meta[current.to_index()].cycle(vert).prev_edge;
+        if current == start {
+            break;
+        }
+        collected.push(current);
     }
+
+    collected
+}
+
+pub(crate) fn join_radial_cycles<R: RedgeContainers>(
+    start: HedgeId,
+    new: HedgeId,
+    mesh: &mut Redge<R>,
+) {
+    let prior = mesh.hedges_meta[start.to_index()].radial_prev_id;
+
+    mesh.hedges_meta[prior.to_index()].radial_next_id = new;
+    mesh.hedges_meta[new.to_index()].radial_prev_id = prior;
+
+    mesh.hedges_meta[start.to_index()].radial_prev_id = new;
+    mesh.hedges_meta[new.to_index()].radial_next_id = start;
 }
 
 pub(crate) fn remove_hedge_from_radial<R: RedgeContainers>(hedge_id: HedgeId, mesh: &mut Redge<R>) {
@@ -197,4 +264,104 @@ pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(
     }
 
     None
+}
+
+pub(crate) fn link_hedges_in_face<R: RedgeContainers>(
+    h1: HedgeId,
+    h2: HedgeId,
+    mesh: &mut Redge<R>,
+) {
+    mesh.hedges_meta[h1.to_index()].face_next_id = h2;
+    mesh.hedges_meta[h2.to_index()].face_prev_id = h1;
+}
+
+pub(crate) fn link_face<R: RedgeContainers>(hedges: &[HedgeId], face: FaceId, mesh: &mut Redge<R>) {
+    for i in 0..hedges.len() {
+        let h1 = hedges[i];
+        let h2 = hedges[(i + 1) % hedges.len()];
+        link_hedges_in_face(h1, h2, mesh);
+
+        mesh.hedges_meta[h1.to_index()].face_id = face;
+    }
+
+    mesh.faces_meta[face.to_index()].hedge_id = hedges[0];
+}
+
+/// Returns, in this order, the two half edges along the direction of the input hedge and the new transversal edge.
+pub(crate) fn split_hedge<R: RedgeContainers>(
+    new_vert_id: VertId,
+    hedge_id: HedgeId,
+    mesh: &mut Redge<R>,
+) -> ([HedgeId; 2], EdgeId) {
+    let handle = mesh.hedge_handle(hedge_id);
+
+    let h1 = hedge_id;
+    let h2 = handle.face_next().id();
+    let h3 = handle.face_prev().id();
+
+    let v1 = handle.face_next().source().id();
+    let v2 = handle.source().id();
+    let t = handle.face_prev().source().id();
+
+    let edge_at_t = handle.face_prev().source().edge().id();
+
+    let f = handle.face().id();
+    let f_data = handle.face().data().clone();
+
+    let vn = new_vert_id;
+    let data = handle.edge().data().clone();
+
+    let n1 = mesh.add_hedge(t);
+    let n2 = mesh.add_hedge(vn);
+    let n3 = mesh.add_hedge(v2);
+
+    let f_n = mesh.add_face(f_data);
+
+    // Create the new face loop.
+    link_hedges_in_face(n3, n2, mesh);
+    link_hedges_in_face(n2, h3, mesh);
+    link_hedges_in_face(h3, n3, mesh);
+
+    // Update the source of the new face hedges.
+    mesh.hedges_meta[n3.to_index()].source_id = v2;
+    mesh.hedges_meta[n2.to_index()].source_id = vn;
+    mesh.hedges_meta[h3.to_index()].source_id = t;
+
+    // New face hedges must point to the new face.
+    mesh.hedges_meta[n3.to_index()].face_id = f_n;
+    mesh.hedges_meta[n2.to_index()].face_id = f_n;
+    mesh.hedges_meta[h3.to_index()].face_id = f_n;
+
+    // Create the old face loop.
+    link_hedges_in_face(h1, h2, mesh);
+    link_hedges_in_face(h2, n1, mesh);
+    link_hedges_in_face(n1, h1, mesh);
+
+    // Update the source of the old face hedges.
+    mesh.hedges_meta[h1.to_index()].source_id = vn;
+    mesh.hedges_meta[h2.to_index()].source_id = v1;
+    mesh.hedges_meta[n1.to_index()].source_id = t;
+
+    // Old face hedges must point to the old face.
+    mesh.hedges_meta[h1.to_index()].face_id = f;
+    mesh.hedges_meta[h2.to_index()].face_id = f;
+    mesh.hedges_meta[n1.to_index()].face_id = f;
+
+    // update the faces to have a correct hedge.
+    mesh.faces_meta[f_n.to_index()].hedge_id = n2;
+    mesh.faces_meta[f.to_index()].hedge_id = n1;
+
+    join_radial_cycles(n2, n1, mesh);
+
+    // Transversal edge.
+    let et = mesh.add_edge([vn, t], data);
+    mesh.edges_meta[et.to_index()].hedge_id = n1;
+    mesh.hedges_meta[n1.to_index()].edge_id = et;
+    mesh.hedges_meta[n2.to_index()].edge_id = et;
+
+    mesh.edges_meta[et.to_index()].hedge_id = n1;
+
+    join_vertex_cycles(edge_at_t, et, mesh);
+
+    ([n3, h1], et)
 }

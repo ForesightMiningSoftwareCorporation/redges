@@ -1,15 +1,20 @@
-use std::{collections::HashMap, usize};
+use std::{collections::HashMap, ops::Mul, usize};
+
+use linear_isomorphic::{InnerSpace, RealField};
+use num_traits::float::TotalOrder;
+use ordered_float::FloatCore;
 
 use crate::{
-    container_trait::{PrimitiveContainer, RedgeContainers},
+    container_trait::{PrimitiveContainer, RedgeContainers, VertData},
     edge_handle,
+    face_handle::FaceMetrics,
     helpers::{
         disable_edge_meta, disable_face_meta, disable_hedge_meta, disable_vert_meta,
         join_radial_cycles, remove_edge_from_cycle, remove_hedge_from_radial,
     },
     validation::{correctness_state, RedgeCorrectness},
     wavefront_loader::ObjData,
-    EdgeId, FaceId, HedgeId, Redge, VertId,
+    EdgeId, Endpoint, FaceId, HedgeId, Redge, VertId,
 };
 
 /// Helper macro to avoid redundancy when defragmenting mesh data.
@@ -407,6 +412,75 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         }
 
         v1
+    }
+
+    pub fn collapse_unsafe_edge<S>(&mut self, edge_id: EdgeId) -> VertId
+    where
+        S: RealField
+            + nalgebra::ComplexField
+            + FloatCore
+            + Mul<VertData<R>, Output = VertData<R>>
+            + TotalOrder
+            + std::iter::Sum,
+        VertData<R>: InnerSpace<S>,
+    {
+        let v1 = self.mesh.edge_handle(edge_id).v1().id();
+        let v2 = self.mesh.edge_handle(edge_id).v2().id();
+
+        self.remove_edge(edge_id);
+        assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct);
+
+        let face_to_keep = self
+            .mesh
+            .vert_handle(v1)
+            .incident_faces()
+            .chain(self.mesh.vert_handle(v2).incident_faces())
+            .max_by(|f1, f2| {
+                println!("test");
+                println!("{:?}", self.mesh.hedges_meta[f1.id().to_index()]);
+                println!("{:?}\n", self.mesh.hedges_meta[f2.id().to_index()]);
+                f1.area().total_cmp(&f2.area())
+            });
+        if face_to_keep.is_none() {
+            return v1;
+        }
+        let face_to_keep = face_to_keep.unwrap().id();
+
+        let endpoint_to_remove = if self
+            .mesh
+            .vert_handle(v1)
+            .incident_faces()
+            .any(|f| f.id() == face_to_keep)
+        {
+            self.mesh.vert_handle(v2)
+        } else {
+            self.mesh.vert_handle(v1)
+        };
+
+        let faces_to_delete: Vec<_> = self
+            .mesh
+            .vert_handle(v1)
+            .incident_faces()
+            .chain(self.mesh.vert_handle(v2).incident_faces())
+            .filter(|f| f.id() != face_to_keep)
+            .map(|f| f.id())
+            .collect();
+        let edges_to_delete: Vec<_> = endpoint_to_remove.star_edges().map(|e| e.id()).collect();
+        let endpoint_id = endpoint_to_remove.id();
+
+        for face in faces_to_delete {
+            self.remove_face(face);
+        }
+
+        for edge in edges_to_delete {
+            self.remove_edge(edge)
+        }
+
+        if v1 == endpoint_id {
+            v2
+        } else {
+            v1
+        }
     }
 }
 

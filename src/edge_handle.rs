@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::container_trait::{EdgeData, RedgeContainers};
 use crate::hedge_handle::HedgeHandle;
@@ -119,6 +119,18 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         count == 2 || (both_endpoints_are_in_boundary && self.is_boundary())
     }
 
+    // Would flipping this edge break topology.
+    pub fn can_flip(&self) -> bool {
+        let [_, [t1, t2]] = self.get_butterfly_vertices();
+        let v1 = self.redge.vert_handle(t1);
+        let v2 = self.redge.vert_handle(t2);
+
+        let v1_set: HashSet<VertId> = HashSet::from_iter(v1.neighbours().map(|v| v.id()));
+        let v2_set: HashSet<VertId> = HashSet::from_iter(v2.neighbours().map(|v| v.id()));
+
+        !v1_set.contains(&v2.id()) && !v2_set.contains(&v1.id())
+    }
+
     pub fn is_boundary(&self) -> bool {
         self.redge.edges_meta[self.id.to_index()].hedge_id == HedgeId::ABSENT
             || self.hedge().radial_neighbours().count() <= 1
@@ -126,6 +138,17 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
     pub fn has_hedge(&self) -> bool {
         self.metadata().hedge_id != HedgeId::ABSENT
+    }
+
+    /// Only works on manifold geometry, and only on non-boundary edges.
+    /// It returns the two vertices on the edge, followed by the two vertices
+    /// tranversal to it.
+    pub(crate) fn get_butterfly_vertices(&self) -> [[VertId; 2]; 2] {
+        let [v1, v2] = self.vertex_ids();
+        let v3 = self.hedge().face_prev().source().id();
+        let v4 = self.hedge().radial_next().face_prev().source().id();
+
+        [[v1, v2], [v3, v4]]
     }
 }
 

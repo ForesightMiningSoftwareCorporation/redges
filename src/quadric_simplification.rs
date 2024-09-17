@@ -131,7 +131,6 @@ where
 
             vid
         } else {
-            // In this case the edge is an isolated edge. So just remove it and skip.
             deleter.remove_edge(eid);
             continue;
         };
@@ -184,8 +183,9 @@ where
 
         let eid = EdgeId(eid as usize);
         if deleter.mesh.edges_meta[eid.to_index()].is_active {
-            deleter.remove_edge(eid);
-            debug_assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
+            // deleter.remove_edge(eid);
+            deleter.collapse_unsafe_edge(eid);
+            assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
         }
     }
 

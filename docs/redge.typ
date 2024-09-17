@@ -50,7 +50,22 @@ The basic topological transformations are the following:
 - Face Split: Introduces a new vertex inside of a face and adds as many faces and edges as necessary to connect the mesh to it.
 - Face Collapse: Replaces a face with a vertex and modifies the surrounding topology accordingly.
 
-However, not all of the above are commonly used, so this document will focus only on those which are necessary for our current needs. More might be added as the need arises.
+However, not all of the above are commonly used, so this document will focus only on those which are necessary for our current needs. More might be added as it becomes necessary.
+
+== Edge Flip
+
+An edge flip only makes sense in the context of a triangle, manifold mesh. It grabs the set made by the two faces incident on the edge, and changes the connectivity of the edge so that it now connects the transversal vertices, as seen in @edge_flip.
+
+#figure(
+  grid(
+    columns: 2,     // 2 means 2 auto-sized columns
+    gutter: 2mm,    // space between columns
+      image("images/edge_flip.svg", width: 90%),
+    ),
+  caption: [States for an edge set before and after an edge flip. Edges are not labeled for shortness, by convention $h_i$ points to $e_i$.],
+) <edge_flip>
+
+Note that there are many cases where an edge flip is not possible. The edge should be manifold, it can't be a boundary edge, and additionally, the transversal edges should not be connected by any edge.
 
 == Edge Collapse
 
@@ -67,7 +82,7 @@ Ignoring any modifications done to incident faces (which may not exist), removin
       image("images/edge_edge_collapse_before.svg", width: 40%),
       image("images/edge_edge_collapse_after.svg", width: 40%),
     ),
-  caption: [State for an edge set before and after an edge collapse.],
+  caption: [States for an edge set before and after an edge collapse.],
 ) <edge_edge_collapse>
 
 A checklist of what must be done for this element:
