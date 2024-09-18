@@ -24,7 +24,7 @@ const EDGE_WEIGHT: f32 = 100_000.0;
 pub enum SimplificationStrategy {
     /// Stop simplifying when no valid edges exist for preserving topology (closed meshes remain closed).
     Conservative,
-    /// Do whatever it takes to simplify geoemtry for as long as there is geometry to simplify (may introduce boundaries on
+    /// Do whatever it takes to simplify geometry for as long as there is geometry to simplify (may introduce boundaries on
     /// otherwise closed meshes).
     Aggressive,
 }
