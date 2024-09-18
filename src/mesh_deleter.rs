@@ -1,13 +1,20 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Mul, usize};
+
+use linear_isomorphic::{InnerSpace, RealField};
+use num_traits::float::TotalOrder;
+use ordered_float::FloatCore;
 
 use crate::{
-    container_trait::{PrimitiveContainer, RedgeContainers},
+    container_trait::{PrimitiveContainer, RedgeContainers, VertData},
+    edge_handle,
+    face_handle::FaceMetrics,
     helpers::{
         disable_edge_meta, disable_face_meta, disable_hedge_meta, disable_vert_meta,
         join_radial_cycles, remove_edge_from_cycle, remove_hedge_from_radial,
     },
     validation::{correctness_state, RedgeCorrectness},
-    EdgeId, FaceId, HedgeId, Redge, VertId,
+    wavefront_loader::ObjData,
+    EdgeId, Endpoint, FaceId, HedgeId, Redge, VertId,
 };
 
 /// Helper macro to avoid redundancy when defragmenting mesh data.
@@ -39,11 +46,19 @@ macro_rules! compact_mesh_data {
 
 pub struct MeshDeleter<R: RedgeContainers> {
     pub(crate) mesh: Redge<R>,
+    deleted_verts: usize,
+    deleted_edges: usize,
+    deleted_faces: usize,
 }
 
 impl<R: RedgeContainers> MeshDeleter<R> {
     pub fn start_deletion(mesh: Redge<R>) -> Self {
-        Self { mesh }
+        Self {
+            mesh,
+            deleted_verts: 0,
+            deleted_edges: 0,
+            deleted_faces: 0,
+        }
     }
 
     pub fn end_deletion(mut self) -> Redge<R> {
@@ -54,6 +69,18 @@ impl<R: RedgeContainers> MeshDeleter<R> {
 
     pub fn mesh(&mut self) -> &mut Redge<R> {
         &mut self.mesh
+    }
+
+    pub fn active_vert_count(&self) -> usize {
+        self.mesh.vert_count() - self.deleted_verts
+    }
+
+    pub fn active_edge_count(&self) -> usize {
+        self.mesh.edge_count() - self.deleted_edges
+    }
+
+    pub fn active_face_count(&self) -> usize {
+        self.mesh.face_count() - self.deleted_faces
     }
 
     pub fn compute_fragmentation_maps(
@@ -72,6 +99,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
                 counter += 1;
             }
         }
+        vertex_fragmentation.insert(VertId::ABSENT, usize::MAX);
 
         let mut edge_fragmentation = HashMap::<EdgeId, usize>::new();
         let mut counter = 0;
@@ -81,6 +109,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
                 counter += 1;
             }
         }
+        edge_fragmentation.insert(EdgeId::ABSENT, usize::MAX);
 
         let mut hedge_fragmentation = HashMap::<HedgeId, usize>::new();
         let mut counter = 0;
@@ -90,6 +119,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
                 counter += 1;
             }
         }
+        hedge_fragmentation.insert(HedgeId::ABSENT, usize::MAX);
 
         let mut face_fragmentation = HashMap::<FaceId, usize>::new();
         let mut counter = 0;
@@ -99,6 +129,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
                 counter += 1;
             }
         }
+        face_fragmentation.insert(FaceId::ABSENT, usize::MAX);
 
         (
             vertex_fragmentation,
@@ -132,9 +163,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
             e.vert_ids[0] = VertId(*vert_frag.get(&e.vert_ids[0]).unwrap());
             e.vert_ids[1] = VertId(*vert_frag.get(&e.vert_ids[1]).unwrap());
 
-            if !e.hedge_id.is_absent() {
-                e.hedge_id = HedgeId(*hedge_frag.get(&e.hedge_id).unwrap());
-            }
+            e.hedge_id = HedgeId(*hedge_frag.get(&e.hedge_id).unwrap());
 
             e.v1_cycle.next_edge = EdgeId(*edge_frag.get(&e.v1_cycle.next_edge).unwrap());
             e.v1_cycle.prev_edge = EdgeId(*edge_frag.get(&e.v1_cycle.prev_edge).unwrap());
@@ -181,6 +210,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
 
             count += 1;
         }
+
+        self.mesh.hedges_meta.truncate(count);
     }
 
     pub fn remove_face(&mut self, face_id: FaceId) {
@@ -205,33 +236,34 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         }
 
         disable_face_meta(face_id, &mut self.mesh);
+
+        self.deleted_faces += 1;
     }
 
     pub fn remove_edge(&mut self, edge_id: EdgeId) {
-        let incident_faces: Vec<_> = self
-            .mesh
-            .edge_handle(edge_id)
-            .hedge()
-            .radial_neighbours()
-            .map(|h| h.face().id())
-            .collect();
+        let edge_handle = self.mesh.edge_handle(edge_id);
+        let incident_faces: Vec<_> = if edge_handle.has_hedge() {
+            edge_handle
+                .hedge()
+                .radial_neighbours()
+                .map(|h| h.face().id())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
-        let handle = self.mesh.edge_handle(edge_id);
-
-        let [v1, v2] = handle.vertex_ids();
-        let v1_safe_edge = handle
+        let [v1, v2] = edge_handle.vertex_ids();
+        let v1_safe_edge = edge_handle
             .v1()
             .star_edges()
             .find(|e| e.id() != edge_id)
-            .unwrap()
-            .id();
+            .map_or(EdgeId::ABSENT, |e| e.id());
 
-        let v2_safe_edge = handle
+        let v2_safe_edge = edge_handle
             .v2()
             .star_edges()
             .find(|e| e.id() != edge_id)
-            .unwrap()
-            .id();
+            .map_or(EdgeId::ABSENT, |e| e.id());
 
         for fid in incident_faces {
             self.remove_face(fid);
@@ -244,26 +276,30 @@ impl<R: RedgeContainers> MeshDeleter<R> {
 
         self.mesh.verts_meta[v1.to_index()].edge_id = v1_safe_edge;
         self.mesh.verts_meta[v2.to_index()].edge_id = v2_safe_edge;
+
+        if v1_safe_edge == EdgeId::ABSENT {
+            disable_vert_meta(v1, &mut self.mesh);
+        }
+
+        if v2_safe_edge == EdgeId::ABSENT {
+            disable_vert_meta(v2, &mut self.mesh);
+        }
+
+        self.deleted_edges += 1;
     }
 
     // Note: There's no doubt this could be made more efficient, but
     // protecting the invariants is very hard. Don't touch this function
     // unless there's a REALLY compelling case it needs to be done.
-    /// Currently only works for triangular faces.
+    /// Currently only works for triangular faces. Only call on edges that
+    /// have faces pointing to them.
     pub fn collapse_edge(&mut self, edge_id: EdgeId) -> VertId {
-        debug_assert!(self
-            .mesh
-            .edge_handle(edge_id)
-            .hedge()
-            .radial_neighbours()
-            .all(|h| h.face_loop().count() == 3));
-
         let v1 = self.mesh.edge_handle(edge_id).v1().id();
         let v2 = self.mesh.edge_handle(edge_id).v2().id();
 
-        let edges_to_merge: Vec<_> = self
-            .mesh
-            .edge_handle(edge_id)
+        let edge_handle = self.mesh.edge_handle(edge_id);
+
+        let edges_to_merge: Vec<_> = edge_handle
             .hedge()
             .radial_neighbours()
             .map(|h| [h.face_prev().edge().id(), h.face_next().edge().id()])
@@ -272,7 +308,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         // TODO: This is incorrect for non-triangular faces as one does not need to
         // remove the faces. Additional logic is needed to keep or restore those faces.
         self.remove_edge(edge_id);
-        debug_assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct,);
+        debug_assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct);
 
         let v2_edges: Vec<_> = self
             .mesh
@@ -288,39 +324,41 @@ impl<R: RedgeContainers> MeshDeleter<R> {
             .map(|e| e.id())
             .collect();
 
-        // Verify that connectivity is sane.
-        debug_assert!({
-            let mut status = true;
-            for e in &v2_edges {
-                let edge = &self.mesh.edges_meta[e.to_index()];
-                if !edge.is_active {
-                    continue;
-                }
-                status = status && (edge.vert_ids[0] == v2 || edge.vert_ids[1] == v2);
-            }
-            status
-        });
-
         // Make all things touching V2 now touch v1.
         for eid in &v2_edges {
-            let radials: Vec<_> = self
-                .mesh
-                .edge_handle(*eid)
-                .hedge()
-                .radial_neighbours()
-                .map(|h| h.id())
-                .collect();
+            let edge = self.mesh.edge_handle(*eid);
+            let hedge_id = edge.metadata().hedge_id;
+            *self.mesh.edges_meta[eid.to_index()].at(v2) = v1;
+            // Assert that v1 will point to a valid edge.
+            self.mesh.verts_meta[v1.to_index()].edge_id = *eid;
+
+            // In the case of a border edge, deleting the faces will have created edges with no hedges.
+            if hedge_id == HedgeId::ABSENT {
+                continue;
+            }
+
+            let edge = self.mesh.edge_handle(*eid);
+            let radials: Vec<_> = edge.hedge().radial_neighbours().map(|h| h.id()).collect();
             for radial in radials {
                 if self.mesh.hedges_meta[radial.to_index()].source_id == v2 {
                     self.mesh.hedges_meta[radial.to_index()].source_id = v1;
                 }
             }
-            *self.mesh.edges_meta[eid.to_index()].at(v2) = v1;
+        }
+
+        // Remove any edges that have become degenerate.
+        for eid in &v2_edges {
+            if self.mesh.edges_meta[eid.to_index()].vert_ids[0]
+                == self.mesh.edges_meta[eid.to_index()].vert_ids[1]
+            {
+                self.remove_edge(*eid);
+                continue;
+            }
         }
 
         // Merge the endpoint vertex cycle.
-        let edges: Vec<_> = v2_edges.iter().chain(v1_edges.iter()).collect();
-
+        let mut edges: Vec<_> = v2_edges.iter().chain(v1_edges.iter()).collect();
+        edges.retain(|e| self.mesh.edges_meta[e.to_index()].is_active);
         for i in 0..=edges.len() {
             let ep = edges[i % edges.len()];
             let en = edges[(i + 1) % edges.len()];
@@ -332,28 +370,40 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         }
 
         disable_vert_meta(v2, &mut self.mesh);
+        self.deleted_verts += 1;
 
+        // Update orbiting hedges to all orbit the surviving edge.
         for [e1, e2] in edges_to_merge {
             let h1 = self.mesh.edges_meta[e1.to_index()].hedge_id;
             let h2 = self.mesh.edges_meta[e2.to_index()].hedge_id;
 
-            let [e2_v1, e2_v2] = self.mesh.edges_meta[e1.to_index()].vert_ids;
+            let [e2_v1, e2_v2] = self.mesh.edges_meta[e2.to_index()].vert_ids;
 
-            // Make all hedges of e2 point to e1.
-            let orbit: Vec<_> = self
-                .mesh
-                .edge_handle(e2)
-                .hedge()
-                .radial_neighbours()
-                .map(|h| h.id())
-                .collect();
-            for h in orbit {
-                self.mesh.hedges_meta[h.to_index()].edge_id = e1;
+            // Make all hedges of e2 point to e1 (if they exist).
+            let e2_handle = self.mesh.edge_handle(e2);
+            if e2_handle.metadata().hedge_id != HedgeId::ABSENT {
+                let orbit: Vec<_> = self
+                    .mesh
+                    .edge_handle(e2)
+                    .hedge()
+                    .radial_neighbours()
+                    .map(|h| h.id())
+                    .collect();
+
+                for h in orbit {
+                    self.mesh.hedges_meta[h.to_index()].edge_id = e1;
+                    self.mesh.edges_meta[e1.to_index()].hedge_id = h;
+                }
             }
 
-            join_radial_cycles(h1, h2, &mut self.mesh);
+            // Only join radial cycles if both are not empty.
+            if h1 != HedgeId::ABSENT && h2 != HedgeId::ABSENT {
+                join_radial_cycles(h1, h2, &mut self.mesh);
+            }
+
             remove_edge_from_cycle(e2, crate::Endpoint::V1, &mut self.mesh);
             remove_edge_from_cycle(e2, crate::Endpoint::V2, &mut self.mesh);
+
             disable_edge_meta(e2, &mut self.mesh);
 
             // Prevent invalidation of the endpoints if they pointed to the removed edge.
@@ -362,6 +412,75 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         }
 
         v1
+    }
+
+    pub fn collapse_unsafe_edge<S>(&mut self, edge_id: EdgeId) -> VertId
+    where
+        S: RealField
+            + nalgebra::ComplexField
+            + FloatCore
+            + Mul<VertData<R>, Output = VertData<R>>
+            + TotalOrder
+            + std::iter::Sum,
+        VertData<R>: InnerSpace<S>,
+    {
+        let v1 = self.mesh.edge_handle(edge_id).v1().id();
+        let v2 = self.mesh.edge_handle(edge_id).v2().id();
+
+        self.remove_edge(edge_id);
+        assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct);
+
+        let face_to_keep = self
+            .mesh
+            .vert_handle(v1)
+            .incident_faces()
+            .chain(self.mesh.vert_handle(v2).incident_faces())
+            .max_by(|f1, f2| {
+                println!("test");
+                println!("{:?}", self.mesh.hedges_meta[f1.id().to_index()]);
+                println!("{:?}\n", self.mesh.hedges_meta[f2.id().to_index()]);
+                f1.area().total_cmp(&f2.area())
+            });
+        if face_to_keep.is_none() {
+            return v1;
+        }
+        let face_to_keep = face_to_keep.unwrap().id();
+
+        let endpoint_to_remove = if self
+            .mesh
+            .vert_handle(v1)
+            .incident_faces()
+            .any(|f| f.id() == face_to_keep)
+        {
+            self.mesh.vert_handle(v2)
+        } else {
+            self.mesh.vert_handle(v1)
+        };
+
+        let faces_to_delete: Vec<_> = self
+            .mesh
+            .vert_handle(v1)
+            .incident_faces()
+            .chain(self.mesh.vert_handle(v2).incident_faces())
+            .filter(|f| f.id() != face_to_keep)
+            .map(|f| f.id())
+            .collect();
+        let edges_to_delete: Vec<_> = endpoint_to_remove.star_edges().map(|e| e.id()).collect();
+        let endpoint_id = endpoint_to_remove.id();
+
+        for face in faces_to_delete {
+            self.remove_face(face);
+        }
+
+        for edge in edges_to_delete {
+            self.remove_edge(edge)
+        }
+
+        if v1 == endpoint_id {
+            v2
+        } else {
+            v1
+        }
     }
 }
 

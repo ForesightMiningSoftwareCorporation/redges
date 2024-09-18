@@ -70,6 +70,9 @@ impl<'r, R: RedgeContainers> Iterator for VertexStarEdgesIter<'r, R> {
     type Item = EdgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.current_edge == EdgeId::ABSENT {
+            return None;
+        }
         let edge = self.redge.edge_handle(self.current_edge);
         let edge_cycle = edge.edge_cycle_at(self.focused_vertex);
 
@@ -116,7 +119,11 @@ impl<'r, R: RedgeContainers> VertIncidentFacesIterator<'r, R> {
         Self {
             edge_iter: VertexStarEdgesIter::new(vert_id, redge),
             current_radial_iter: RadialHedgeIter::new(
-                redge.vert_handle(vert_id).edge().hedge().id(),
+                redge
+                    .vert_handle(vert_id)
+                    .star_edges()
+                    .find(|e| e.has_hedge())
+                    .map_or(HedgeId::ABSENT, |e| e.hedge().id()),
                 redge,
             ),
             seen: HashSet::new(),
@@ -139,6 +146,9 @@ impl<'r, R: RedgeContainers> Iterator for VertIncidentFacesIterator<'r, R> {
 
         // If no such face exists, try each edge until we find an unseen incident face or we run out of edges.
         while let Some(e) = self.edge_iter.next() {
+            if !e.has_hedge() {
+                continue;
+            }
             self.current_radial_iter = RadialHedgeIter::new(e.hedge().id(), self.redge);
 
             if let Some(f) = self

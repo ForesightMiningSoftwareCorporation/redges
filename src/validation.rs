@@ -11,6 +11,12 @@ use crate::{
     EdgeId, Endpoint, HedgeId, Redge, VertId,
 };
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum TopologicalRelation {
+    Next,
+    Prior,
+}
+
 // TODO: For each function in this file there will be missing checks, add them as
 // needed until they are entirely trustworthy.
 #[derive(Debug, PartialEq, Eq)]
@@ -31,7 +37,7 @@ pub enum EdgeCorrectness {
     IdAndIndexMismatch,
     AbsentEndpoint(Endpoint),
     CyclePointsToAbsent(Endpoint),
-    CycleIsBroken(Endpoint, VertId),
+    CycleIsBroken(Endpoint, TopologicalRelation, VertId),
     EdgeWithOnlyOnePoint,
     InvalidHedgePointer(HedgeId),
     HedgePointsToDifferentEdge,
@@ -152,28 +158,28 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         if next_edge_v1.vert_ids[0] != v1 && next_edge_v1.vert_ids[1] != v1 {
             return RedgeCorrectness::InvalidEdge(
                 i,
-                EdgeCorrectness::CycleIsBroken(Endpoint::V1, v1),
+                EdgeCorrectness::CycleIsBroken(Endpoint::V1, TopologicalRelation::Next, v1),
             );
         }
 
         if prev_edge_v1.vert_ids[0] != v1 && prev_edge_v1.vert_ids[1] != v1 {
             return RedgeCorrectness::InvalidEdge(
                 i,
-                EdgeCorrectness::CycleIsBroken(Endpoint::V1, v1),
+                EdgeCorrectness::CycleIsBroken(Endpoint::V1, TopologicalRelation::Prior, v1),
             );
         }
 
         if next_edge_v2.vert_ids[0] != v2 && next_edge_v2.vert_ids[1] != v2 {
             return RedgeCorrectness::InvalidEdge(
                 i,
-                EdgeCorrectness::CycleIsBroken(Endpoint::V2, v2),
+                EdgeCorrectness::CycleIsBroken(Endpoint::V2, TopologicalRelation::Next, v2),
             );
         }
 
         if prev_edge_v2.vert_ids[0] != v2 && prev_edge_v2.vert_ids[1] != v2 {
             return RedgeCorrectness::InvalidEdge(
                 i,
-                EdgeCorrectness::CycleIsBroken(Endpoint::V2, v2),
+                EdgeCorrectness::CycleIsBroken(Endpoint::V2, TopologicalRelation::Prior, v2),
             );
         }
 
@@ -182,7 +188,11 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         {
             return RedgeCorrectness::InvalidEdge(
                 i,
-                EdgeCorrectness::CycleIsBroken(Endpoint::V1, edge.vert_ids[0]),
+                EdgeCorrectness::CycleIsBroken(
+                    Endpoint::V1,
+                    TopologicalRelation::Next,
+                    edge.vert_ids[0],
+                ),
             );
         }
 
@@ -191,7 +201,11 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         {
             return RedgeCorrectness::InvalidEdge(
                 i,
-                EdgeCorrectness::CycleIsBroken(Endpoint::V2, edge.vert_ids[1]),
+                EdgeCorrectness::CycleIsBroken(
+                    Endpoint::V2,
+                    TopologicalRelation::Prior,
+                    edge.vert_ids[1],
+                ),
             );
         }
     }
@@ -251,9 +265,24 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
     RedgeCorrectness::Correct
 }
 
-/// Returns the number of regular vertices
+/// A regular vertex is a vertex with valence 6.
 pub fn count_regular_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
-    mesh.meta_verts().map(|v| (v.star_edges().count() == 6) as usize).sum()
+    mesh.meta_verts()
+        .map(|v| (v.star_edges().count() == 6) as usize)
+        .sum()
+}
+
+pub fn count_isolated_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
+    mesh.meta_verts()
+        .map(|v| (v.star_edges().count() == 0) as usize)
+        .sum()
+}
+
+pub fn count_innactive_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
+    mesh.verts_meta
+        .iter()
+        .map(|v| (!v.is_active) as usize)
+        .sum()
 }
 
 /// Compute how many vertices there are for each valence.

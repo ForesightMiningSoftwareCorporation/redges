@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::container_trait::{EdgeData, RedgeContainers};
 use crate::hedge_handle::HedgeHandle;
@@ -7,6 +7,7 @@ use crate::vert_handle::VertHandle;
 use crate::{
     container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, Redge, StarCycleNode, VertId,
 };
+use crate::{HedgeId, ABSENT};
 
 pub struct EdgeHandle<'r, R: RedgeContainers> {
     id: EdgeId,
@@ -47,7 +48,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         self.metadata().is_active
     }
 
-    fn metadata(&self) -> &EdgeMetaData {
+    pub(crate) fn metadata(&self) -> &EdgeMetaData {
         &self.redge.edges_meta[self.id.to_index()]
     }
 
@@ -78,12 +79,17 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         match self.vertex_endpoint(vert_id) {
             EdgeVertexType::V1 => self.metadata().v1_cycle.clone(),
             EdgeVertexType::V2 => self.metadata().v2_cycle.clone(),
-            EdgeVertexType::NotInEdge => panic!("Vertex id not part of this edge"),
+            EdgeVertexType::NotInEdge => panic!(
+                "Vertex id {:?} not part of edge with id {:?} and pointing to {:?}.",
+                vert_id,
+                self.id,
+                self.vertex_ids(),
+            ),
         }
     }
 
     /// Tests if collapsing the current edge would violate topology. If it
-    /// returns true collapsing the edge is safe.
+    /// returns true, collapsing the edge is safe.
     // TODO: this is assuming triangular faces right now.
     pub fn can_collapse(&self) -> bool {
         let v1 = self.v1();
@@ -91,13 +97,58 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
         // If vertices adjacent to the opposite vertices to the edge overlap,
         // this edge cannot be collapsed.
-        // TODO: this logic was designed for triangular faces, it;s not certain it works on polygonal ones.
+        // TODO: this logic was designed for triangular faces, it's not certain it works on polygonal ones.
         let set1: BTreeSet<VertId> = BTreeSet::from_iter(v1.neighbours().map(|v| v.id()));
         let set2: BTreeSet<VertId> = BTreeSet::from_iter(v2.neighbours().map(|v| v.id()));
 
         let count = set1.intersection(&set2).count();
 
-        count == 2
+        // Imagine, for example a triangulated strip:
+        // *---*
+        // |\  |
+        // | \ |
+        // |  \|
+        // *---* <---- Bad idea to collapse this edge.
+        // |\  |
+        // | \ |
+        // |  \|
+        // *---*
+        // Collapsing the middle edge would create degenerate geometry.
+        let both_endpoints_are_in_boundary =
+            self.v1().is_in_boundary() && self.v2().is_in_boundary();
+        count == 2 || (both_endpoints_are_in_boundary && self.is_boundary())
+    }
+
+    // Would flipping this edge break topology.
+    pub fn can_flip(&self) -> bool {
+        let [_, [t1, t2]] = self.get_butterfly_vertices();
+        let v1 = self.redge.vert_handle(t1);
+        let v2 = self.redge.vert_handle(t2);
+
+        let v1_set: HashSet<VertId> = HashSet::from_iter(v1.neighbours().map(|v| v.id()));
+        let v2_set: HashSet<VertId> = HashSet::from_iter(v2.neighbours().map(|v| v.id()));
+
+        !v1_set.contains(&v2.id()) && !v2_set.contains(&v1.id())
+    }
+
+    pub fn is_boundary(&self) -> bool {
+        self.redge.edges_meta[self.id.to_index()].hedge_id == HedgeId::ABSENT
+            || self.hedge().radial_neighbours().count() <= 1
+    }
+
+    pub fn has_hedge(&self) -> bool {
+        self.metadata().hedge_id != HedgeId::ABSENT
+    }
+
+    /// Only works on manifold geometry, and only on non-boundary edges.
+    /// It returns the two vertices on the edge, followed by the two vertices
+    /// tranversal to it.
+    pub(crate) fn get_butterfly_vertices(&self) -> [[VertId; 2]; 2] {
+        let [v1, v2] = self.vertex_ids();
+        let v3 = self.hedge().face_prev().source().id();
+        let v4 = self.hedge().radial_next().face_prev().source().id();
+
+        [[v1, v2], [v3, v4]]
     }
 }
 

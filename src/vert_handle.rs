@@ -49,4 +49,8 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
     pub fn incident_faces(&self) -> VertIncidentFacesIterator<'r, R> {
         VertIncidentFacesIterator::new(self.id, self.redge)
     }
+
+    pub fn is_in_boundary(&self) -> bool {
+        self.star_edges().any(|e| e.is_boundary())
+    }
 }

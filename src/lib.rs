@@ -1,7 +1,7 @@
 // TODO: For all handles and iterators that can panic, add a fallible API
 // wrapper that won't crash.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Mul};
 
 pub mod binary_heap;
 pub mod container_trait;
@@ -19,6 +19,11 @@ use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, V
 use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
 use hedge_handle::HedgeHandle;
+use helpers::{
+    join_radial_cycles, join_vertex_cycles, link_face, link_hedges_in_face, remove_edge_from_cycle,
+    split_hedge,
+};
+use linear_isomorphic::{InnerSpace, RealField};
 use validation::{correctness_state, RedgeCorrectness};
 use vert_handle::VertHandle;
 mod wavefront_loader;
@@ -301,7 +306,11 @@ impl<R: RedgeContainers> Redge<R> {
     }
 
     pub fn hedge_handle<'r>(&'r self, id: HedgeId) -> HedgeHandle<'r, R> {
-        assert!(id.to_index() < self.hedges_meta.len());
+        assert!(
+            id.to_index() < self.hedges_meta.len(),
+            "hedge id {:?} is invalid.",
+            id
+        );
         HedgeHandle::new(id, self)
     }
 
@@ -328,6 +337,10 @@ impl<R: RedgeContainers> Redge<R> {
         self.face_data.get_mut(id.to_index() as u64)
     }
 
+    /// If you call this in the middle of deletion operations, innactive vertices will still exist.
+    /// Since the defragmentation won't be applied until destruction of the deleter, these vertices
+    /// will be exported, despite being innactive, to preserve indexing. So if you encounter
+    /// ghost or nan vertices in the returned data, check whether those vertices are innactive.
     pub fn to_face_list(&self) -> (Vec<VertData<R>>, Vec<Vec<usize>>) {
         let verts = self.vert_data.iterate().cloned().collect();
         let mut faces = Vec::with_capacity(self.faces_meta.len());
@@ -359,6 +372,230 @@ impl<R: RedgeContainers> Redge<R> {
         }
 
         (verts, faces)
+    }
+
+    /// This can only be applied to a non-boundary manifold edge, and only if the incident faces are triangular.
+    pub fn flip_edge(&mut self, eid: EdgeId) {
+        let edge_handle = self.edge_handle(eid);
+        let [[v1, v2], [t1, t2]] = edge_handle.get_butterfly_vertices();
+
+        // Get the two incident faces before the flip.
+        let f1 = edge_handle.hedge().face().id();
+        let f2 = edge_handle.hedge().radial_next().face().id();
+
+        // Get the hedges of the incident faces.
+        let h1 = edge_handle.hedge().id();
+        let h2 = edge_handle.hedge().face_next().id();
+        let h3 = edge_handle.hedge().face_prev().id();
+
+        let h4 = edge_handle.hedge().radial_next().id();
+        let h5 = edge_handle.hedge().radial_next().face_next().id();
+        let h6 = edge_handle.hedge().radial_next().face_prev().id();
+
+        remove_edge_from_cycle(eid, Endpoint::V1, self);
+        remove_edge_from_cycle(eid, Endpoint::V2, self);
+
+        // Update the edge to point to the transversal vertices.
+        self.edges_meta[eid.to_index()].vert_ids = [t1, t2];
+
+        // Reconnect hedges in the new configuraiton and update faces accordingly.
+        self.hedges_meta[h1.to_index()].source_id = t2;
+        self.hedges_meta[h4.to_index()].source_id = t1;
+        link_face(&[h1, h3, h5], f1, self);
+        link_face(&[h2, h4, h6], f2, self);
+
+        // Re-insert the edge in the cycles of the transversal vertices.
+        let e1 = self.hedge_handle(h1).edge().id();
+        let e3 = self.hedge_handle(h3).edge().id();
+        let e5 = self.hedge_handle(h5).edge().id();
+        join_vertex_cycles(e3, e1, self);
+        join_vertex_cycles(e5, e1, self);
+
+        // Make sure the vertices point to valid edges after the flip.
+        self.verts_meta[v1.to_index()].edge_id = self.hedges_meta[h2.to_index()].edge_id;
+        self.verts_meta[v2.to_index()].edge_id = self.hedges_meta[h6.to_index()].edge_id;
+    }
+
+    pub fn split_edge<S>(&mut self, eid: EdgeId)
+    where
+        S: RealField + Mul<VertData<R>, Output = VertData<R>>,
+        VertData<R>: InnerSpace<S>,
+    {
+        let handle = self.edge_handle(eid);
+
+        let mid = (handle.v1().data().clone() + handle.v2().data().clone()) * S::from(0.5).unwrap();
+        let vn = self.add_vert(mid);
+
+        let handle = self.edge_handle(eid);
+        let hedges_to_split: Vec<_> = handle.hedge().radial_neighbours().map(|h| h.id()).collect();
+
+        let [v1, v2] = handle.vertex_ids();
+
+        let e = eid;
+        // TODO: we might need to be smarter about how the data of the new edges is constructed.
+        let data = handle.data().clone();
+        let en = self.add_edge([v2, vn], data.clone());
+
+        let mut key1 = [v1, vn];
+        key1.sort();
+        let mut e_hedges = Vec::new();
+
+        let mut key2 = [v2, vn];
+        key2.sort();
+        let mut en_hedges = Vec::new();
+
+        let mut vn_edges = Vec::new();
+        // Split the hedges radially orbitting the edge.
+        // Collect the new hedges parallel to the edge, to re-attach them later.
+        // Collect the new edges transversal to the edge to attach them later.
+        for hid in hedges_to_split {
+            let ([h1, h2], et) = split_hedge(vn, hid, self);
+
+            vn_edges.push(et);
+
+            let p1 = self.hedges_meta[h1.to_index()].source_id;
+            let p2 = self.hedges_meta[h2.to_index()].source_id;
+            let p3 = self.hedge_handle(h2).face_next().source().id();
+
+            let mut h1_key = [p1, p2];
+            h1_key.sort();
+
+            // Detect for both hedges which is the one between v_2 and v_n
+            // and which is the one between v_n and v_1.
+            if h1_key == key1 {
+                self.hedges_meta[h1.to_index()].edge_id = e;
+                e_hedges.push(h1);
+            } else if h1_key == key2 {
+                self.hedges_meta[h1.to_index()].edge_id = en;
+                en_hedges.push(h1);
+            } else {
+                panic!();
+            }
+
+            let mut h2_key = [p2, p3];
+            h2_key.sort();
+            if h2_key == key1 {
+                self.hedges_meta[h2.to_index()].edge_id = e;
+                e_hedges.push(h2);
+            } else if h2_key == key2 {
+                self.hedges_meta[h2.to_index()].edge_id = en;
+                en_hedges.push(h2);
+            } else {
+                panic!();
+            }
+        }
+
+        self.edges_meta[e.to_index()].hedge_id = e_hedges[0];
+        self.edges_meta[en.to_index()].hedge_id = en_hedges[0];
+        vn_edges.push(e);
+        vn_edges.push(en);
+
+        // Reset the vertex cycle at the opposite endpoint of the current edge.
+        remove_edge_from_cycle(eid, Endpoint::V2, self);
+        *self.edges_meta[e.to_index()].at(v2) = vn;
+
+        let cycle = self.edges_meta[e.to_index()].cycle_mut(vn);
+        cycle.next_edge = e;
+        cycle.prev_edge = e;
+
+        // Join the radial cycles of the newly created edges after the split.
+        for i in 0..e_hedges.len() {
+            let h1 = e_hedges[i];
+            let h2 = e_hedges[(i + 1) % e_hedges.len()];
+
+            join_radial_cycles(h1, h2, self);
+        }
+
+        for i in 0..en_hedges.len() {
+            let h1 = en_hedges[i];
+            let h2 = en_hedges[(i + 1) % en_hedges.len()];
+
+            join_radial_cycles(h1, h2, self);
+        }
+
+        // Create a new cycle of edges around the new vertex.
+        for i in 0..vn_edges.len() - 1 {
+            let e1 = vn_edges[i];
+            let e2 = vn_edges[i + 1];
+
+            join_vertex_cycles(e1, e2, self);
+        }
+
+        self.verts_meta[vn.to_index()].edge_id = en;
+
+        let v2_edge = self.verts_meta[v2.to_index()].edge_id;
+        join_vertex_cycles(v2_edge, en, self);
+
+        let state = correctness_state(&self);
+        debug_assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+    }
+
+    pub(crate) fn add_vert(&mut self, data: VertData<R>) -> VertId {
+        self.vert_data.push(data);
+        let id = VertId(self.verts_meta.len() as usize);
+        self.verts_meta.push(VertMetaData {
+            id,
+            edge_id: EdgeId::ABSENT,
+            is_active: true,
+        });
+
+        id
+    }
+
+    pub(crate) fn add_edge(&mut self, vert_ids: [VertId; 2], data: EdgeData<R>) -> EdgeId {
+        let id = EdgeId(self.edges_meta.len() as usize);
+        self.edge_data.push(data);
+        self.edges_meta.push(EdgeMetaData {
+            id,
+            vert_ids,
+            hedge_id: HedgeId::ABSENT,
+            v1_cycle: StarCycleNode {
+                next_edge: id,
+                prev_edge: id,
+            },
+            v2_cycle: StarCycleNode {
+                next_edge: id,
+                prev_edge: id,
+            },
+            is_active: true,
+        });
+
+        id
+    }
+
+    /// Warning: Unlike `add_vert` and `add_edge`, this function will leave
+    /// the redge in an invalid state because the hedge and edge pointers won't be initialized.
+    /// Use carefully.
+    pub(crate) fn add_hedge(&mut self, source_id: VertId) -> HedgeId {
+        let id = HedgeId(self.hedges_meta.len() as usize);
+        self.hedges_meta.push(HedgeMetaData {
+            id,
+            edge_id: EdgeId::ABSENT,
+            radial_next_id: id,
+            radial_prev_id: id,
+            face_next_id: HedgeId::ABSENT,
+            face_prev_id: HedgeId::ABSENT,
+            source_id,
+            face_id: FaceId::ABSENT,
+            is_active: true,
+        });
+
+        id
+    }
+
+    /// Warning: Unlike `add_vert` and `add_edge`, this function will leave
+    /// the redge in an invalid state because the face pointers won't point to anything. Use very carefully.
+    pub(crate) fn add_face(&mut self, data: FaceData<R>) -> FaceId {
+        self.face_data.push(data);
+        let id = FaceId(self.faces_meta.len() as usize);
+
+        self.faces_meta.push(FaceMetaData {
+            id,
+            hedge_id: HedgeId::ABSENT,
+            is_active: true,
+        });
+
+        id
     }
 }
 
@@ -407,7 +644,7 @@ impl EdgeMetaData {
         } else if vert_id == self.vert_ids[1] {
             return &mut self.v2_cycle;
         } else {
-            panic!()
+            panic!("Vertex {:?} does not exist in edge {:?}.", vert_id, self.id)
         }
     }
 
@@ -419,6 +656,19 @@ impl EdgeMetaData {
         } else {
             panic!("{:?}", vert_id)
         }
+    }
+
+    pub(crate) fn topology_intersection(&self, other: &EdgeMetaData) -> Option<VertId> {
+        let vids = self.vert_ids;
+        let oids = other.vert_ids;
+
+        if vids[0] == oids[0] || vids[0] == oids[1] {
+            return Some(vids[0]);
+        } else if vids[1] == oids[0] || vids[1] == oids[1] {
+            return Some(vids[1]);
+        }
+
+        return None;
     }
 }
 
@@ -474,10 +724,69 @@ pub enum Endpoint {
 
 #[cfg(test)]
 mod tests {
+    use nalgebra::Vector3;
     use validation::{manifold_state, RedgeManifoldness};
     use wavefront_loader::ObjData;
 
     use super::*;
+
+    #[test]
+    fn test_edge_flip() {
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/loop_cube.obj");
+
+        let mut redge = Redge::<(_, _, _)>::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/before_flip.obj");
+
+        redge.flip_edge(EdgeId(0));
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/after_flip.obj");
+    }
+
+    #[test]
+    fn test_edge_split() {
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/loop_cube.obj");
+
+        // Convert to a type that admits arithmetic transformations.
+        let vertices: Vec<_> = vertices
+            .iter()
+            .map(|v| Vector3::new(v[0], v[1], v[2]))
+            .collect();
+
+        let mut redge = Redge::<(_, _, _)>::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/before_flip.obj");
+
+        redge.split_edge(EdgeId(0));
+
+        let (vs, fs) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/after_flip.obj");
+    }
 
     #[test]
     fn test_redge_init() {
