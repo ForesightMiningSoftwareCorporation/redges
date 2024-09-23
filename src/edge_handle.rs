@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 
-use crate::container_trait::{EdgeData, RedgeContainers};
+use crate::container_trait::{EdgeData, RedgeContainers, VertData};
 use crate::hedge_handle::HedgeHandle;
 use crate::vert_handle::VertHandle;
 
@@ -22,6 +22,10 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
     pub fn vertex_ids(&self) -> [VertId; 2] {
         self.metadata().vert_ids
+    }
+
+    pub fn vertex_positions(&self) -> [VertData<R>; 2] {
+        [self.v1().data().clone(), self.v2().data().clone()]
     }
 
     pub fn id(&self) -> EdgeId {
@@ -121,7 +125,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
     // Would flipping this edge break topology.
     pub fn can_flip(&self) -> bool {
-        let [_, [t1, t2]] = self.get_butterfly_vertices();
+        let [_, [t1, t2]] = self.butterfly_vertices_ids();
         let v1 = self.redge.vert_handle(t1);
         let v2 = self.redge.vert_handle(t2);
 
@@ -143,12 +147,26 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
     /// Only works on manifold geometry, and only on non-boundary edges.
     /// It returns the two vertices on the edge, followed by the two vertices
     /// tranversal to it.
-    pub(crate) fn get_butterfly_vertices(&self) -> [[VertId; 2]; 2] {
+    pub(crate) fn butterfly_vertices_ids(&self) -> [[VertId; 2]; 2] {
         let [v1, v2] = self.vertex_ids();
         let v3 = self.hedge().face_prev().source().id();
         let v4 = self.hedge().radial_next().face_prev().source().id();
 
         [[v1, v2], [v3, v4]]
+    }
+
+    /// Get the positions of the two transverasl vertices for this edge (for triangular incident faces).
+    pub(crate) fn opposite_vertex_positions(&self) -> [VertData<R>; 2] {
+        let o1 = self.hedge().face_prev().source().data().clone();
+        let o2 = self
+            .hedge()
+            .radial_next()
+            .face_prev()
+            .source()
+            .data()
+            .clone();
+
+        [o1, o2]
     }
 }
 

@@ -4,6 +4,14 @@
   *Redge Manual*
 ])
 
+#align(center, text(10pt)[
+  Camilo Talero
+])
+
+#align(center, text(10pt)[
+  Foresight Spatial Labs
+])
+
 #show: checklist
 
 = Introduction
@@ -52,20 +60,52 @@ The basic topological transformations are the following:
 
 However, not all of the above are commonly used, so this document will focus only on those which are necessary for our current needs. More might be added as it becomes necessary.
 
+One thing to be wary off in all following diagrams, is that the edges do not have an orientation, thus the order in which $v_1$ and $v_2$ are stored may be different than what is shown here. Be carefyle when implementing/debugging.
+
 == Edge Flip
 
 An edge flip only makes sense in the context of a triangle, manifold mesh. It grabs the set made by the two faces incident on the edge, and changes the connectivity of the edge so that it now connects the transversal vertices, as seen in @edge_flip.
 
 #figure(
   grid(
-    columns: 2,     // 2 means 2 auto-sized columns
+    columns: 1,
     gutter: 2mm,    // space between columns
       image("images/edge_flip.svg", width: 90%),
     ),
   caption: [States for an edge set before and after an edge flip. Edges are not labeled for shortness, by convention $h_i$ points to $e_i$.],
 ) <edge_flip>
 
-Note that there are many cases where an edge flip is not possible. The edge should be manifold, it can't be a boundary edge, and additionally, the transversal edges should not be connected by any edge.
+Note that there are many cases where an edge flip is not possible. The edge should be manifold, it can't be a boundary edge, and additionally, the transversal vertices should not be connected by any edge.
+
+== Edge Split 
+
+Edge splitting consists of introducing a new vertex and additional facets to maintain a triangular mesh.
+
+Given a "butterfly" in the case of a manifold mesh, it will add a new vertex, two new edges and two new faces to the mesh.
+
+In order to handle non-manifold cases, the logic is split in two general stages. The first stage is to split the edge itself as shown in @edge_split_edge. 
+
+#figure(
+  image("images/edge_split_edge.svg", width: 30%),
+  caption: [States for an edge set before splitting only the edge.],
+) <edge_split_edge>
+
+Next we will apply a spetial procedure to split each hedge and face incident on the edge being split, according to the diagram in @edge_split_face.
+
+#figure(
+  image("images/edge_split_face.svg", width: 70%),
+  caption: [States for an edge set before splitting only the edge.],
+) <edge_split_face>
+
+Once each face is split, we grab the newly introduced elements and stitch them together by updating all relevant pointers.
+
+In summary:
+
+- Split the edge, introducing a new vertex $v_n$ and a new edge $e_n$.
+
+- For each face incident on the original edge, split the hedge parallel to the edge.
+
+- Collect all new elements with incorrect pointers created in the prior two steps and update their pointers to restore topology.
 
 == Edge Collapse
 

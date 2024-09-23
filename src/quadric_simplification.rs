@@ -100,27 +100,6 @@ where
             queue.remove(e.id().to_index() as u32);
         }
 
-        if collpased_count % 10000 == 0 {
-            let v1 = edge_handle.v1().data().clone();
-            let v2 = edge_handle.v2().data().clone();
-            let (vs, fs) = deleter.mesh.to_face_list();
-
-            println!("{} {}", collpased_count, deleter.active_face_count());
-            ObjData::export(
-                &(&vs, &fs),
-                &format!("out/before_mesh_{}.obj", collpased_count).to_string(),
-            );
-            // ObjData::export(
-            //     &(&vec![v1, v2.clone()], &vec![[0, 1]]),
-            //     &format!("out/edge_{}.obj", collpased_count).to_string(),
-            // );
-
-            // ObjData::export(
-            //     &vec![v2],
-            //     &format!("out/endpoint_v2_{}.obj", collpased_count).to_string(),
-            // );
-        }
-
         let edge_handle = deleter.mesh().edge_handle(eid);
 
         let vid = if edge_handle.has_hedge() {
@@ -136,12 +115,6 @@ where
         };
 
         debug_assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
-
-        // let (vs, fs) = deleter.mesh.to_face_list();
-        // ObjData::export(
-        //     &(&vs, &fs),
-        //     &format!("out/after_mesh_{}.obj", simplify_count).to_string(),
-        // );
 
         for e in deleter.mesh().vert_handle(vid).star_edges() {
             debug_assert!(e.is_active());
@@ -167,25 +140,11 @@ where
             break;
         }
         collpased_count += 1;
-        // let (vs, fs) = deleter.mesh.to_face_list();
-        // ObjData::export(
-        //     &(&vs, &fs),
-        //     &format!("out/before_mesh_{}.obj", collpased_count).to_string(),
-        // );
-
-        // let edge_handle = deleter.mesh().edge_handle(EdgeId(eid as usize));
-        // let v1 = edge_handle.v1().data().clone();
-        // let v2 = edge_handle.v2().data().clone();
-        // ObjData::export(
-        //     &(&vec![v1, v2], &vec![[0, 1]]),
-        //     &format!("out/edge_{}.obj", simplify_count).to_string(),
-        // );
 
         let eid = EdgeId(eid as usize);
         if deleter.mesh.edges_meta[eid.to_index()].is_active {
-            // deleter.remove_edge(eid);
             deleter.collapse_unsafe_edge(eid);
-            assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
+            debug_assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
         }
     }
 

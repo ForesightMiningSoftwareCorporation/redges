@@ -3,6 +3,7 @@
 
 use std::{collections::BTreeMap, ops::Mul};
 
+pub mod algorithms;
 pub mod binary_heap;
 pub mod container_trait;
 pub mod edge_handle;
@@ -20,8 +21,8 @@ use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
 use hedge_handle::HedgeHandle;
 use helpers::{
-    join_radial_cycles, join_vertex_cycles, link_face, link_hedges_in_face, remove_edge_from_cycle,
-    split_hedge,
+    _collect_backward_cycle, _collect_forward_cycle, join_radial_cycles, join_vertex_cycles,
+    link_face, link_hedges_in_face, remove_edge_from_cycle, split_hedge,
 };
 use linear_isomorphic::{InnerSpace, RealField};
 use validation::{correctness_state, RedgeCorrectness};
@@ -375,48 +376,65 @@ impl<R: RedgeContainers> Redge<R> {
     }
 
     /// This can only be applied to a non-boundary manifold edge, and only if the incident faces are triangular.
+    // If you plan on modifying this function please read `docs/redge.pdf`.
     pub fn flip_edge(&mut self, eid: EdgeId) {
         let edge_handle = self.edge_handle(eid);
-        let [[v1, v2], [t1, t2]] = edge_handle.get_butterfly_vertices();
-
-        // Get the two incident faces before the flip.
-        let f1 = edge_handle.hedge().face().id();
-        let f2 = edge_handle.hedge().radial_next().face().id();
 
         // Get the hedges of the incident faces.
-        let h1 = edge_handle.hedge().id();
-        let h2 = edge_handle.hedge().face_next().id();
-        let h3 = edge_handle.hedge().face_prev().id();
+        let hedge = edge_handle.hedge();
 
-        let h4 = edge_handle.hedge().radial_next().id();
-        let h5 = edge_handle.hedge().radial_next().face_next().id();
-        let h6 = edge_handle.hedge().radial_next().face_prev().id();
+        let h1 = hedge.id();
+        let h2 = hedge.face_next().id();
+        let h3 = hedge.face_prev().id();
+
+        let h4 = hedge.radial_next().id();
+        let h5 = hedge.radial_next().face_prev().id();
+        let h6 = hedge.radial_next().face_next().id();
+
+        // It's extremely important to access the vertices through the hedge rather than through the edge!
+        // This is orientation agnostic the later isn't.
+        let v1 = hedge.source().id();
+        let v2 = hedge.face_next().source().id();
+        let t1 = hedge.face_prev().source().id();
+        let t2 = hedge.radial_next().face_prev().source().id();
+
+        // Get the two incident faces before the flip.
+        let f1 = hedge.face().id();
+        let f2 = hedge.radial_next().face().id();
+
+        let v1_safe_edge = self.vert_handle(v1).pick_different(eid).unwrap().id();
+        let v2_safe_edge = self.vert_handle(v2).pick_different(eid).unwrap().id();
+
+        let t1_edge = self.verts_meta[t1.to_index()].edge_id;
+        let t2_edge = self.verts_meta[t2.to_index()].edge_id;
 
         remove_edge_from_cycle(eid, Endpoint::V1, self);
         remove_edge_from_cycle(eid, Endpoint::V2, self);
 
+        // Reconnect hedges in the new configuration and update faces accordingly.
+        self.hedges_meta[h1.to_index()].source_id = t1;
+        self.hedges_meta[h4.to_index()].source_id = t2;
+
+        link_face(&[h1, h5, h2], f1, self);
+        link_face(&[h4, h3, h6], f2, self);
+
+        // Make sure the vertices point to valid edges after the flip.
+        self.verts_meta[v1.to_index()].edge_id = v1_safe_edge;
+        self.verts_meta[v2.to_index()].edge_id = v2_safe_edge;
+
         // Update the edge to point to the transversal vertices.
         self.edges_meta[eid.to_index()].vert_ids = [t1, t2];
 
-        // Reconnect hedges in the new configuraiton and update faces accordingly.
-        self.hedges_meta[h1.to_index()].source_id = t2;
-        self.hedges_meta[h4.to_index()].source_id = t1;
-        link_face(&[h1, h3, h5], f1, self);
-        link_face(&[h2, h4, h6], f2, self);
+        join_vertex_cycles(eid, t1_edge, self);
+        join_vertex_cycles(eid, t2_edge, self);
 
-        // Re-insert the edge in the cycles of the transversal vertices.
-        let e1 = self.hedge_handle(h1).edge().id();
-        let e3 = self.hedge_handle(h3).edge().id();
-        let e5 = self.hedge_handle(h5).edge().id();
-        join_vertex_cycles(e3, e1, self);
-        join_vertex_cycles(e5, e1, self);
-
-        // Make sure the vertices point to valid edges after the flip.
-        self.verts_meta[v1.to_index()].edge_id = self.hedges_meta[h2.to_index()].edge_id;
-        self.verts_meta[v2.to_index()].edge_id = self.hedges_meta[h6.to_index()].edge_id;
+        self.verts_meta[t1.to_index()].edge_id = eid;
+        self.verts_meta[t2.to_index()].edge_id = eid;
     }
 
-    pub fn split_edge<S>(&mut self, eid: EdgeId)
+    /// Can only be applied to triangular meshes.
+    // If you plan on modifying this function please read `docs/redge.pdf`.
+    pub fn split_edge<S>(&mut self, eid: EdgeId) -> VertId
     where
         S: RealField + Mul<VertData<R>, Output = VertData<R>>,
         VertData<R>: InnerSpace<S>,
@@ -490,8 +508,17 @@ impl<R: RedgeContainers> Redge<R> {
         vn_edges.push(e);
         vn_edges.push(en);
 
+        let safe_edge = self
+            .edge_handle(eid)
+            .v2()
+            .star_edges()
+            .find(|e| e.id() != eid)
+            .expect("Trying to split an edge with degenerate topology.")
+            .id();
+
         // Reset the vertex cycle at the opposite endpoint of the current edge.
         remove_edge_from_cycle(eid, Endpoint::V2, self);
+        self.verts_meta[v2.to_index()].edge_id = safe_edge;
         *self.edges_meta[e.to_index()].at(v2) = vn;
 
         let cycle = self.edges_meta[e.to_index()].cycle_mut(vn);
@@ -503,14 +530,16 @@ impl<R: RedgeContainers> Redge<R> {
             let h1 = e_hedges[i];
             let h2 = e_hedges[(i + 1) % e_hedges.len()];
 
-            join_radial_cycles(h1, h2, self);
+            self.hedges_meta[h1.to_index()].radial_next_id = h2;
+            self.hedges_meta[h2.to_index()].radial_prev_id = h1;
         }
 
         for i in 0..en_hedges.len() {
             let h1 = en_hedges[i];
             let h2 = en_hedges[(i + 1) % en_hedges.len()];
 
-            join_radial_cycles(h1, h2, self);
+            self.hedges_meta[h1.to_index()].radial_next_id = h2;
+            self.hedges_meta[h2.to_index()].radial_prev_id = h1;
         }
 
         // Create a new cycle of edges around the new vertex.
@@ -526,8 +555,9 @@ impl<R: RedgeContainers> Redge<R> {
         let v2_edge = self.verts_meta[v2.to_index()].edge_id;
         join_vertex_cycles(v2_edge, en, self);
 
-        let state = correctness_state(&self);
-        debug_assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+        debug_assert!(correctness_state(&self) == RedgeCorrectness::Correct);
+
+        vn
     }
 
     pub(crate) fn add_vert(&mut self, data: VertData<R>) -> VertId {
@@ -805,8 +835,7 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let state = manifold_state(&redge);
-        debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
+        debug_assert!(manifold_state(&redge) == RedgeManifoldness::IsManifold,);
 
         let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/tetrahedron.obj");
@@ -826,8 +855,7 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let state = manifold_state(&redge);
-        debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
+        debug_assert!(manifold_state(&redge) == RedgeManifoldness::IsManifold);
 
         let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");

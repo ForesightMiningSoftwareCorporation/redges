@@ -2,6 +2,7 @@ use crate::container_trait::{RedgeContainers, VertData};
 use crate::edge_handle::EdgeHandle;
 
 use crate::iterators::{VertIncidentFacesIterator, VertexStarEdgesIter, VertexStarVerticesIter};
+use crate::EdgeId;
 use crate::{container_trait::PrimitiveContainer, Redge, VertId, VertMetaData};
 
 pub struct VertHandle<'r, R: RedgeContainers> {
@@ -52,5 +53,9 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
 
     pub fn is_in_boundary(&self) -> bool {
         self.star_edges().any(|e| e.is_boundary())
+    }
+
+    pub fn pick_different(&self, eid: EdgeId) -> Option<EdgeHandle<'r, R>> {
+        self.star_edges().find(|e| e.id() != eid)
     }
 }

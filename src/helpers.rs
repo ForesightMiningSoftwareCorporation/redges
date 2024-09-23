@@ -23,6 +23,11 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
         .cycle(active_vertex)
         .clone();
 
+    // This edge should now point to itself since it was removed from the cycle.
+    let cycle_mut = mesh.edges_meta[edge_id.to_index()].cycle_mut(active_vertex);
+    cycle_mut.next_edge = edge_id;
+    cycle_mut.prev_edge = edge_id;
+
     // Attach the prior and next pointers to each other, thus eliminating
     // all references to the current edge.
     let prior_cycle = mesh.edges_meta[cycle.prev_edge.to_index()].cycle_mut(active_vertex);
@@ -68,7 +73,7 @@ pub(crate) fn join_vertex_cycles<R: RedgeContainers>(
     cycle.prev_edge = t1;
 }
 
-fn _collect_forward_cycle<R: RedgeContainers>(
+pub(crate) fn _collect_forward_cycle<R: RedgeContainers>(
     start: EdgeId,
     vert: VertId,
     mesh: &mut Redge<R>,
@@ -86,7 +91,7 @@ fn _collect_forward_cycle<R: RedgeContainers>(
     collected
 }
 
-fn _collect_backward_cycle<R: RedgeContainers>(
+pub(crate) fn _collect_backward_cycle<R: RedgeContainers>(
     start: EdgeId,
     vert: VertId,
     mesh: &mut Redge<R>,

@@ -1,7 +1,6 @@
 use container_trait::{FaceData, RedgeContainers};
 use iterators::{FaceLoopHedgeIter, FaceVertIterator};
 use linear_isomorphic::prelude::*;
-use std::default;
 use std::fmt::Debug;
 
 use crate::hedge_handle::HedgeHandle;

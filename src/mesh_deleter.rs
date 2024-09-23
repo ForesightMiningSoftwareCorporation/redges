@@ -291,6 +291,9 @@ impl<R: RedgeContainers> MeshDeleter<R> {
     // Note: There's no doubt this could be made more efficient, but
     // protecting the invariants is very hard. Don't touch this function
     // unless there's a REALLY compelling case it needs to be done.
+    //
+    // If you plan on modifying this function please read `docs/redge.pdf`.
+    //
     /// Currently only works for triangular faces. Only call on edges that
     /// have faces pointing to them.
     pub fn collapse_edge(&mut self, edge_id: EdgeId) -> VertId {
@@ -428,19 +431,14 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         let v2 = self.mesh.edge_handle(edge_id).v2().id();
 
         self.remove_edge(edge_id);
-        assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct);
+        debug_assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct);
 
         let face_to_keep = self
             .mesh
             .vert_handle(v1)
             .incident_faces()
             .chain(self.mesh.vert_handle(v2).incident_faces())
-            .max_by(|f1, f2| {
-                println!("test");
-                println!("{:?}", self.mesh.hedges_meta[f1.id().to_index()]);
-                println!("{:?}\n", self.mesh.hedges_meta[f2.id().to_index()]);
-                f1.area().total_cmp(&f2.area())
-            });
+            .max_by(|f1, f2| f1.area().total_cmp(&f2.area()));
         if face_to_keep.is_none() {
             return v1;
         }

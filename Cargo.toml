@@ -3,6 +3,8 @@ name = "redges"
 version = "0.1.0"
 edition = "2021"
 
+authors = ["Camilo Talero <camilo.talero@fslabs.ca>"]
+
 [dependencies]
 linear_isomorphic = "0.2.4"
 nalgebra = "0.33.0"
