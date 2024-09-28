@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::{
     container_trait::RedgeContainers, edge_handle::EdgeHandle, face_handle::FaceHandle,
@@ -54,16 +54,6 @@ impl<'r, R: RedgeContainers> VertexStarEdgesIter<'r, R> {
             start: true,
         }
     }
-
-    pub(crate) fn clone_state(&self) -> Self {
-        Self {
-            start_edge: self.start_edge,
-            current_edge: self.current_edge,
-            focused_vertex: self.focused_vertex,
-            start: self.start,
-            redge: self.redge,
-        }
-    }
 }
 
 impl<'r, R: RedgeContainers> Iterator for VertexStarEdgesIter<'r, R> {
@@ -90,20 +80,59 @@ impl<'r, R: RedgeContainers> Iterator for VertexStarEdgesIter<'r, R> {
     }
 }
 
+// Note that the implementation of this iterator could be much faster if we assumed
+// manifold topology.
 pub struct VertexLinkEdgesIter<'r, R: RedgeContainers> {
+    focused_vertex: VertId,
     edge_iter: VertexStarEdgesIter<'r, R>,
+    orbit_iter: RadialHedgeIter<'r, R>,
+    seen: BTreeSet<EdgeId>,
+}
+
+impl<'r, R: RedgeContainers> VertexLinkEdgesIter<'r, R> {
+    pub(crate) fn new(vid: VertId, redge: &'r Redge<R>) -> Self {
+        let hid = redge.vert_handle(vid).edge().hedge().id();
+        Self {
+            focused_vertex: vid,
+            edge_iter: VertexStarEdgesIter::new(vid, redge),
+            orbit_iter: RadialHedgeIter::new(hid, redge),
+            seen: BTreeSet::new(),
+        }
+    }
 }
 
 impl<'r, R: RedgeContainers> Iterator for VertexLinkEdgesIter<'r, R> {
     type Item = EdgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.edge_iter.next().map(|edge_handle| {
-            EdgeHandle::new(
-                edge_handle.hedge().face_next().edge().id(),
-                self.edge_iter.redge,
-            )
-        })
+        // Exhaust the current hedge orbit for all edges in faces touching the vertex.
+        if let Some(h) = self.orbit_iter.find(|h| {
+            h.source().id() == self.focused_vertex && self.seen.insert(h.face_next().edge().id())
+        }) {
+            return Some(h.face_next().edge());
+        }
+
+        // If the orbit is exhausted, move to the next edge in the star.
+        loop {
+            let next = self.edge_iter.next();
+            if next.is_none() {
+                return None;
+            }
+
+            let next = next.unwrap();
+            self.orbit_iter = RadialHedgeIter::new(next.hedge().id(), self.edge_iter.redge);
+            let candidate = self
+                .orbit_iter
+                .find(|h| {
+                    h.source().id() == self.focused_vertex
+                        && self.seen.insert(h.face_next().edge().id())
+                })
+                .map(|h| h.face_next().edge());
+
+            if candidate.is_some() {
+                return candidate;
+            }
+        }
     }
 }
 

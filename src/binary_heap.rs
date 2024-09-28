@@ -95,6 +95,11 @@ impl<T: Copy + PartialOrd + Default + Debug> IndexBinaryHeap<T> {
             && self.indices[index as usize] < self.heap.len() as u32
     }
 
+    pub fn read(&self, index: ValueIndex) -> T {
+        debug_assert!(index < self.indices.len() as u32);
+        self.values[index as usize]
+    }
+
     pub fn remove(&mut self, index: ValueIndex) {
         if !self.contains(index) {
             return;

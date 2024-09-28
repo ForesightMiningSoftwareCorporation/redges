@@ -1,7 +1,9 @@
 use crate::container_trait::{RedgeContainers, VertData};
 use crate::edge_handle::EdgeHandle;
 
-use crate::iterators::{VertIncidentFacesIterator, VertexStarEdgesIter, VertexStarVerticesIter};
+use crate::iterators::{
+    VertIncidentFacesIterator, VertexLinkEdgesIter, VertexStarEdgesIter, VertexStarVerticesIter,
+};
 use crate::EdgeId;
 use crate::{container_trait::PrimitiveContainer, Redge, VertId, VertMetaData};
 
@@ -45,6 +47,10 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
 
     pub fn star_edges(&self) -> VertexStarEdgesIter<'r, R> {
         VertexStarEdgesIter::new(self.id, self.redge)
+    }
+
+    pub fn link_edges(&self) -> VertexLinkEdgesIter<'r, R> {
+        VertexLinkEdgesIter::new(self.id, self.redge)
     }
 
     pub fn incident_faces(&self) -> VertIncidentFacesIterator<'r, R> {

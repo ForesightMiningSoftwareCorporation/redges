@@ -137,7 +137,7 @@ Note that this leaves the Radial Edge in a broken state, all operations in this 
 
 === Face Removal
 
-As shown in @face_edge_collapse, when collapsing an edge, we will want to modify the connectivity of the face complices surrounding it. For each face incident on the edge, there will be one half edge that must be removed and thus pointers must be updated.
+As shown in @face_edge_collapse, when collapsing an edge, we will want to modify the connectivity of the face complexes surrounding it. For each face incident on the edge, there will be one half edge that must be removed and thus pointers must be updated.
 
 #figure(
   grid(

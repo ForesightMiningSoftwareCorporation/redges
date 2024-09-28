@@ -35,7 +35,7 @@ impl<'r, R: RedgeContainers> HedgeHandle<'r, R> {
     pub fn radial_next(&self) -> Self {
         debug_assert!(
             !self.metadata().radial_next_id.is_absent(),
-            "Hedge {:?} next's is absent.",
+            "Hedge {:?} radial next's is absent.",
             self.id
         );
         HedgeHandle::new(self.metadata().radial_next_id, self.redge)

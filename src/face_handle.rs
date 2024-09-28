@@ -1,6 +1,7 @@
 use container_trait::{FaceData, RedgeContainers};
 use iterators::{FaceLoopHedgeIter, FaceVertIterator};
 use linear_isomorphic::prelude::*;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Debug;
 
 use crate::hedge_handle::HedgeHandle;
@@ -48,6 +49,53 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
             face_loop: FaceLoopHedgeIter::new(self.hedge().id(), self.redge),
         }
     }
+
+    #[inline]
+    pub fn vertex_ids(&'r self) -> impl Iterator<Item = VertId> + '_ {
+        self.vertices().map(|v| v.id())
+    }
+
+    /// Count the number of sides in the face.
+    pub fn side_count(&self) -> usize {
+        self.hedge().face_loop().count()
+    }
+
+    /// Inspects the face for topological degeneracies such as a face with two sides or
+    /// two faces sharing more than two vertices.
+    pub fn check_degeneracies(&self) -> FaceDegeneracies {
+        match self.side_count() {
+            0 => panic!("Encountered a face with no sides."),
+            1 => return FaceDegeneracies::Monogon,
+            2 => return FaceDegeneracies::Digon,
+            _ => {}
+        }
+
+        let s0: BTreeSet<_> = self.vertex_ids().collect();
+
+        for h in self.hedge().face_loop() {
+            for hedge in h.radial_neighbours().filter(|o| o.id() != h.id()) {
+                let s1: BTreeSet<_> = hedge.face().vertex_ids().collect();
+
+                let intersect = s0.intersection(&s1);
+                if intersect.count() > 2 {
+                    return FaceDegeneracies::Doppelganger;
+                }
+            }
+        }
+
+        FaceDegeneracies::None
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FaceDegeneracies {
+    None,
+    /// Two sides.
+    Digon,
+    /// One side.
+    Monogon,
+    /// Two triangles sharing more than two vertex indices.
+    Doppelganger,
 }
 
 pub trait FaceMetrics<V, N, S>

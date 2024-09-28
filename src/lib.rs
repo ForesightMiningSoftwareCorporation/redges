@@ -14,8 +14,10 @@ pub mod iterators;
 pub mod mesh_deleter;
 pub mod quadric_simplification;
 mod quadrics;
+pub mod queue;
 pub mod validation;
 pub mod vert_handle;
+
 use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, VertData};
 use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
@@ -31,7 +33,7 @@ mod wavefront_loader;
 
 macro_rules! define_id_struct {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
+        #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
         pub struct $name(usize);
         impl Default for $name {
             fn default() -> Self {
@@ -48,6 +50,16 @@ macro_rules! define_id_struct {
                 self.0
             }
             const ABSENT: Self = Self(ABSENT);
+        }
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                if self.is_absent() {
+                    write!(f, "{}(ABSENT)", stringify!($name))
+                } else {
+                    write!(f, "{}({})", stringify!($name), self.0)
+                }
+            }
         }
     };
 }
