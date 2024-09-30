@@ -4,7 +4,6 @@
 use std::{collections::BTreeMap, ops::Mul};
 
 pub mod algorithms;
-pub mod binary_heap;
 pub mod container_trait;
 pub mod edge_handle;
 pub mod face_handle;

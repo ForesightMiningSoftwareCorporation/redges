@@ -91,7 +91,12 @@ pub struct VertexLinkEdgesIter<'r, R: RedgeContainers> {
 
 impl<'r, R: RedgeContainers> VertexLinkEdgesIter<'r, R> {
     pub(crate) fn new(vid: VertId, redge: &'r Redge<R>) -> Self {
-        let hid = redge.vert_handle(vid).edge().hedge().id();
+        let handle = redge.vert_handle(vid).edge();
+        let hid = if handle.has_hedge() {
+            handle.hedge().id()
+        } else {
+            HedgeId::ABSENT
+        };
         Self {
             focused_vertex: vid,
             edge_iter: VertexStarEdgesIter::new(vid, redge),
@@ -217,7 +222,9 @@ impl<'r, R: RedgeContainers> Iterator for RadialHedgeIter<'r, R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         debug_assert!(self.current_hedge != HedgeId::ABSENT);
-        if self.current_hedge == self.start_hedge && !self.start {
+        if (self.current_hedge == self.start_hedge && !self.start)
+            || self.start_hedge == HedgeId::ABSENT
+        {
             return None;
         }
 

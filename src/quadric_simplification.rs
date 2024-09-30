@@ -7,6 +7,7 @@ use crate::{
     face_handle::{FaceDegeneracies, FaceHandle, FaceMetrics},
     mesh_deleter::MeshDeleter,
     quadrics::Quadric,
+    queue::PQueue,
     validation::{correctness_state, RedgeCorrectness},
     vert_handle::VertHandle,
     wavefront_loader::ObjData,
@@ -45,9 +46,7 @@ impl Default for QuadricSimplificationConfig {
 
 // Theory: https://www.cs.cmu.edu/~./garland/Papers/quadrics.pdf
 //         https://hhoppe.com/newqem.pdf
-/// Uses quadric distances to reduce the total number of edges by a an amount
-/// equal to `simplify_count`. For example if `simplify_count` is 1000 then
-/// 1000 edges will be collapsed.
+/// Uses quadric distances to reduce the total number of edges until a target face count is reached.
 pub fn quadric_simplify<S, R>(mut mesh: Redge<R>, config: QuadricSimplificationConfig) -> Redge<R>
 where
     R: RedgeContainers,
@@ -71,17 +70,11 @@ where
 
     let mut queue = initialize_queue::<S, R>(&mesh);
 
-    println!("read {:?}", queue.read(506));
-
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
-    let mut dbg = 0;
+
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
         let (_cost, id) = queue.pop().unwrap();
         let eid = EdgeId(id as usize);
-
-        dbg += 1;
-        // println!("{}", dbg);
-        println!("{}", deleter.active_face_count());
 
         // Skip inactive edges.
         let edge_handle = deleter.mesh().edge_handle(eid);
@@ -89,24 +82,25 @@ where
             continue;
         }
 
-        // if dbg > 34200 {
-        //     ObjData::export(
-        //         &vec![
-        //             edge_handle.v1().data().clone(),
-        //             edge_handle.v2().data().clone(),
-        //         ],
-        //         format!("edge_{}.obj", dbg).as_str(),
-        //     );
+        // Delete non-manifold faces.
+        let edge_handle = deleter.mesh().edge_handle(eid);
 
-        //     let (vs, fs) = deleter.mesh.to_face_list();
-        //     ObjData::export(&(&vs, &fs), format!("mesh_{}.obj", dbg).as_str());
-        // }
+        if !edge_handle.has_hedge() {
+            deleter.remove_edge(eid);
+            continue;
+        }
+
+        let edge_handle = deleter.mesh().edge_handle(eid);
+        if edge_handle.hedge().radial_neighbours().count() == 1 {
+            let fid = edge_handle.hedge().face().id();
+            deleter.remove_face(fid);
+            assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
+            continue;
+        }
 
         // Skip bad edges if possible.
         let edge_handle = deleter.mesh().edge_handle(eid);
-        if !edge_handle.can_collapse()
-        /*&& config.strategy != SimplificationStrategy::Aggressive*/
-        {
+        if !edge_handle.can_collapse() {
             continue;
         }
 
@@ -133,23 +127,10 @@ where
             queue.remove(e.id().to_index() as u32);
         }
 
-        println!(
-            "{:?}",
-            edge_handle
-                .v1()
-                .star_edges()
-                .chain(edge_handle.v1().link_edges())
-                .chain(edge_handle.v2().star_edges())
-                .chain(edge_handle.v2().link_edges())
-                .map(|e| e.id())
-                .collect::<BTreeSet<_>>()
-        );
-        println!("{:?}", queue.contains(161921));
-
         let edge_handle = deleter.mesh().edge_handle(eid);
 
-        let vid = if edge_handle.has_hedge() {
-            let vid = deleter.collapse_edge_experimental(eid);
+        let vid = if edge_handle.has_hedge() && edge_handle.can_collapse() {
+            let vid = deleter.collapse_edge(eid);
             // Update the position of the collapsed vertex to that wich minimizes the
             // quadric error.
             *deleter.mesh().vert_data(vid) = optimum;
@@ -177,23 +158,23 @@ where
 
         let vn = deleter.mesh().vert_handle(vid);
 
-        println!(
-            "{:?}",
-            vn.star_edges()
-                .chain(vn.link_edges())
-                .map(|e| e.id())
-                .collect::<BTreeSet<_>>()
-        );
         for e in vn.star_edges().chain(vn.link_edges()) {
             debug_assert!(e.is_active());
             let (cost, _new_optimum) = edge_cost(&e);
-            // assert!(
-            //     !queue.contains(e.id().to_index() as u32),
-            //     "duplicate edge in the queue {:?}",
-            //     e.id()
-            // );
 
             queue.push(cost, e.id().to_index() as u32);
+        }
+    }
+
+    // Doing edge collapse after a certian point is very challenging, as a compromise,
+    // if we reach here and we need a smaller mesh, we will just delete faces, if anyone wants
+    // to try making an edge collapse that works no matter the situation you have my blessing.
+    while deleter.active_face_count() > config.target_face_count
+        && config.strategy == SimplificationStrategy::Aggressive
+    {
+        let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
+        if let Some(f) = face {
+            deleter.remove_face(f.id);
         }
     }
 
@@ -209,7 +190,7 @@ where
 }
 
 /// For each vertex, compute the quadrics of its incident faces.
-fn initialize_queue<S, R>(mesh: &Redge<R>) -> IndexBinaryHeap<S>
+fn initialize_queue<S, R>(mesh: &Redge<R>) -> PQueue<u32, S>
 where
     R: RedgeContainers,
     S: FloatCore
@@ -219,7 +200,7 @@ where
         + TotalOrder,
     VertData<R>: InnerSpace<S>,
 {
-    let mut queue = IndexBinaryHeap::new();
+    let mut queue = PQueue::with_capacity(mesh.edge_count());
     for edge in mesh.meta_edges() {
         let (cost, _optimum) = edge_cost(&edge);
         queue.push(cost, edge.id().to_index() as u32);
@@ -344,6 +325,7 @@ where
     let mut adjacent_faces: BTreeSet<_> = edge
         .v1()
         .star_edges()
+        .filter(|e| e.has_hedge())
         .flat_map(|e| {
             e.hedge()
                 .radial_neighbours()
@@ -351,12 +333,17 @@ where
                 .collect::<Vec<_>>()
         })
         .collect();
-    adjacent_faces.extend(edge.v2().star_edges().flat_map(|e| {
-        e.hedge()
-            .radial_neighbours()
-            .map(|h| h.face().id())
-            .collect::<Vec<_>>()
-    }));
+    adjacent_faces.extend(
+        edge.v2()
+            .star_edges()
+            .filter(|e| e.has_hedge())
+            .flat_map(|e| {
+                e.hedge()
+                    .radial_neighbours()
+                    .map(|h| h.face().id())
+                    .collect::<Vec<_>>()
+            }),
+    );
 
     // Remove from the adjacent faces those that will be deleted by the edge collapse.
     for f in edge.hedge().radial_neighbours().map(|h| h.face().id()) {
@@ -437,7 +424,7 @@ mod tests {
             redge,
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Aggressive,
-                target_face_count: 15000,
+                target_face_count: 0,
             },
         );
 
