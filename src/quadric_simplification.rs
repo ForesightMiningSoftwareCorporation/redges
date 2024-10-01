@@ -1,7 +1,6 @@
 use std::{collections::BTreeSet, ops::Mul};
 
 use crate::{
-    binary_heap::IndexBinaryHeap,
     container_trait::{PrimitiveContainer, VertData},
     edge_handle::EdgeHandle,
     face_handle::{FaceDegeneracies, FaceHandle, FaceMetrics},
@@ -90,17 +89,13 @@ where
             continue;
         }
 
-        let edge_handle = deleter.mesh().edge_handle(eid);
-        if edge_handle.hedge().radial_neighbours().count() == 1 {
-            let fid = edge_handle.hedge().face().id();
-            deleter.remove_face(fid);
-            assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
-            continue;
-        }
-
         // Skip bad edges if possible.
         let edge_handle = deleter.mesh().edge_handle(eid);
         if !edge_handle.can_collapse() {
+            continue;
+        }
+
+        if edge_handle.is_boundary() {
             continue;
         }
 
@@ -127,38 +122,23 @@ where
             queue.remove(e.id().to_index() as u32);
         }
 
-        let edge_handle = deleter.mesh().edge_handle(eid);
-
-        let vid = if edge_handle.has_hedge() && edge_handle.can_collapse() {
-            let vid = deleter.collapse_edge(eid);
-            // Update the position of the collapsed vertex to that wich minimizes the
-            // quadric error.
-            *deleter.mesh().vert_data(vid) = optimum;
-
-            vid
-        } else {
-            deleter.remove_edge(eid);
-            continue;
-        };
-
-        if config.strategy == SimplificationStrategy::Aggressive {
-            // Keep trying to find degenerate faces and fixing them until nothing wrong can be found.
-            while let Some(face) = deleter
-                .mesh()
-                .vert_handle(vid)
-                .incident_faces()
-                .find(|face| face.check_degeneracies() == FaceDegeneracies::Doppelganger)
-                .map(|f| f.id())
-            {
-                deleter.remove_face(face);
-            }
-        }
+        let vid = deleter.collapse_edge(eid);
+        // Update the position of the collapsed vertex to that wich minimizes the
+        // quadric error.
+        *deleter.mesh().vert_data(vid) = optimum;
 
         debug_assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
 
         let vn = deleter.mesh().vert_handle(vid);
 
-        for e in vn.star_edges().chain(vn.link_edges()) {
+        for e in vn.star_edges() {
+            debug_assert!(e.is_active());
+            let (cost, _new_optimum) = edge_cost(&e);
+
+            queue.push(cost, e.id().to_index() as u32);
+        }
+
+        for e in vn.link_edges() {
             debug_assert!(e.is_active());
             let (cost, _new_optimum) = edge_cost(&e);
 
@@ -166,7 +146,7 @@ where
         }
     }
 
-    // Doing edge collapse after a certian point is very challenging, as a compromise,
+    // Doing edge collapse after a certain point is very challenging, as a compromise,
     // if we reach here and we need a smaller mesh, we will just delete faces, if anyone wants
     // to try making an edge collapse that works no matter the situation you have my blessing.
     while deleter.active_face_count() > config.target_face_count
@@ -279,7 +259,7 @@ where
         let border_quadric = Quadric::from_plane(
             edge.v1().data().clone(),
             constraint_normal.normalized(),
-            S::from(constraint_normal.norm() * S::from(EDGE_WEIGHT_PENALTY).unwrap()).unwrap(),
+            S::from(constraint_normal.norm() + S::from(EDGE_WEIGHT_PENALTY).unwrap()).unwrap(),
         );
 
         qe += border_quadric;
@@ -419,7 +399,6 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let start = Instant::now();
         let redge = quadric_simplify(
             redge,
             QuadricSimplificationConfig {

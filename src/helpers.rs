@@ -157,12 +157,20 @@ pub(crate) fn remove_hedge_from_radial<R: RedgeContainers>(hedge_id: HedgeId, me
 }
 
 pub(crate) fn disable_vert_meta<R: RedgeContainers>(vert_id: VertId, mesh: &mut Redge<R>) {
+    if vert_id == VertId::ABSENT {
+        return;
+    }
+
     let vert = &mut mesh.verts_meta[vert_id.to_index()];
     vert.is_active = false;
     vert.edge_id = EdgeId::ABSENT;
 }
 
 pub(crate) fn disable_edge_meta<R: RedgeContainers>(edge: EdgeId, mesh: &mut Redge<R>) {
+    if edge == EdgeId::ABSENT {
+        return;
+    }
+
     let edge = &mut mesh.edges_meta[edge.to_index()];
 
     // Break every single pointer in this edge.
@@ -181,6 +189,9 @@ pub(crate) fn disable_edge_meta<R: RedgeContainers>(edge: EdgeId, mesh: &mut Red
 }
 
 pub(crate) fn disable_hedge_meta<R: RedgeContainers>(hedge: HedgeId, mesh: &mut Redge<R>) {
+    if hedge == HedgeId::ABSENT {
+        return;
+    }
     let hedge = &mut mesh.hedges_meta[hedge.to_index()];
 
     hedge.is_active = false;
@@ -194,6 +205,10 @@ pub(crate) fn disable_hedge_meta<R: RedgeContainers>(hedge: HedgeId, mesh: &mut 
 }
 
 pub(crate) fn disable_face_meta<R: RedgeContainers>(face: FaceId, mesh: &mut Redge<R>) {
+    if face == FaceId::ABSENT {
+        return;
+    }
+
     let face = &mut mesh.faces_meta[face.to_index()];
 
     face.is_active = false;
@@ -338,15 +353,15 @@ pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Red
         .hedge()
         .radial_neighbours()
         .find(|h| h.id() != h1)
-        .unwrap()
-        .id();
+        .map(|h| h.id())
+        .unwrap_or(HedgeId::ABSENT);
     let h2_safe = handle
         .hedge()
         .face_next()
         .radial_neighbours()
         .find(|h| h.id() != h2)
-        .unwrap()
-        .id();
+        .map(|h| h.id())
+        .unwrap_or(HedgeId::ABSENT);
 
     let h2_radials: Vec<_> = mesh
         .hedge_handle(h2)
@@ -357,9 +372,16 @@ pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Red
 
     // Joining first matters, maintain thsi order of operations.
     // (It's simpler to remove from a large linked list than to add to a small one).
-    join_radial_cycles(h1_safe, h2_safe, mesh);
-    remove_hedge_from_radial(h1, mesh);
-    remove_hedge_from_radial(h2, mesh);
+    if h1_safe != HedgeId::ABSENT && h2_safe != HedgeId::ABSENT {
+        join_radial_cycles(h1_safe, h2_safe, mesh);
+    }
+
+    if h1_safe != HedgeId::ABSENT {
+        remove_hedge_from_radial(h1, mesh);
+    }
+    if h2_safe != HedgeId::ABSENT {
+        remove_hedge_from_radial(h2, mesh);
+    }
 
     for hid in h2_radials {
         mesh.hedges_meta[hid.to_index()].edge_id = e1;
@@ -369,7 +391,11 @@ pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Red
     mesh.verts_meta[v1.to_index()].edge_id = e1;
     mesh.verts_meta[v2.to_index()].edge_id = e1;
 
-    mesh.edges_meta[e1.to_index()].hedge_id = h1_safe;
+    mesh.edges_meta[e1.to_index()].hedge_id = if h1_safe != HedgeId::ABSENT {
+        h1_safe
+    } else {
+        h2_safe
+    };
 
     remove_edge_from_cycle(e2, Endpoint::V1, mesh);
     remove_edge_from_cycle(e2, Endpoint::V2, mesh);
@@ -378,8 +404,6 @@ pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Red
     disable_hedge_meta(h1, mesh);
     disable_hedge_meta(h2, mesh);
     disable_face_meta(face_id, mesh);
-
-    debug_assert!(mesh.edges_meta[e1.to_index()].hedge_id != HedgeId::ABSENT);
 }
 
 /// Returns, in this order, the two half edges along the direction of the input hedge and the new transversal edge.

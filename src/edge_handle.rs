@@ -107,6 +107,10 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
         let count = set1.intersection(&set2).count();
 
+        if count != 2 {
+            return false;
+        }
+
         // Imagine, for example a triangulated strip:
         // *---*
         // |\  |
@@ -120,7 +124,8 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         // Collapsing the middle edge would create degenerate geometry.
         let both_endpoints_are_in_boundary =
             self.v1().is_in_boundary() && self.v2().is_in_boundary();
-        count == 2 || (both_endpoints_are_in_boundary && self.is_boundary())
+
+        self.is_boundary() || !both_endpoints_are_in_boundary
     }
 
     // Would flipping this edge break topology.

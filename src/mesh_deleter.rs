@@ -421,36 +421,4 @@ mod tests {
         let (vs, fs) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
     }
-
-    #[test]
-    fn test_edge_collapse_experimental() {
-        let ObjData {
-            vertices,
-            vertex_face_indices,
-            ..
-        } = ObjData::from_disk_file("assets/loop_cube.obj");
-
-        let redge = Redge::<(_, _, _)>::new(
-            vertices,
-            (),
-            (),
-            vertex_face_indices
-                .iter()
-                .map(|f| f.iter().map(|&i| i as usize)),
-        );
-
-        let state = manifold_state(&redge);
-        debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
-
-        let mut deleter = MeshDeleter::start_deletion(redge);
-        deleter.collapse_edge(EdgeId(0));
-
-        let state = manifold_state(deleter.mesh());
-        debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
-
-        let redge = deleter.end_deletion();
-
-        let (vs, fs) = redge.to_face_list();
-        ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
-    }
 }

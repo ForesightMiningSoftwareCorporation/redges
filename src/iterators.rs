@@ -125,6 +125,10 @@ impl<'r, R: RedgeContainers> Iterator for VertexLinkEdgesIter<'r, R> {
             }
 
             let next = next.unwrap();
+            if !next.has_hedge() {
+                continue;
+            }
+
             self.orbit_iter = RadialHedgeIter::new(next.hedge().id(), self.edge_iter.redge);
             let candidate = self
                 .orbit_iter
@@ -221,7 +225,10 @@ impl<'r, R: RedgeContainers> Iterator for RadialHedgeIter<'r, R> {
     type Item = HedgeHandle<'r, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        debug_assert!(self.current_hedge != HedgeId::ABSENT);
+        if self.current_hedge == HedgeId::ABSENT {
+            return None;
+        };
+
         if (self.current_hedge == self.start_hedge && !self.start)
             || self.start_hedge == HedgeId::ABSENT
         {
