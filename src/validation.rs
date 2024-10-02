@@ -3,7 +3,10 @@
 // to abstract meshes. These methods should work for those abstractions.
 // If we couple them to the objects it will be harder to do this.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    iter,
+};
 
 use crate::{
     container_trait::{PrimitiveContainer, RedgeContainers},
@@ -51,6 +54,7 @@ pub enum HedgeCorrectness {
     FaceLoopChainIsBroken,
     RadialChainIsBroken,
     SourceIsAbsent,
+    LongRadialChain,
 }
 
 /// If this returns `Correct` then it is safe to create handles.
@@ -231,6 +235,29 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         }
         if hedge.source_id.is_absent() {
             return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::SourceIsAbsent);
+        }
+
+        let mut current = hedge.id;
+        let mut iter_count = 0;
+        loop {
+            if current == HedgeId::ABSENT {
+                return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::RadialChainIsBroken);
+            }
+
+            let next = mesh.hedges_meta[current.to_index()].radial_next_id;
+            if next == HedgeId::ABSENT || !mesh.hedges_meta[next.to_index()].is_active {
+                return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::RadialChainIsBroken);
+            }
+
+            current = next;
+            if current == hedge.id || iter_count > 100 {
+                break;
+            }
+            iter_count += 1;
+        }
+
+        if iter_count > 100 {
+            return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::LongRadialChain);
         }
     }
 

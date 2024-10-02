@@ -1,7 +1,10 @@
 //! WARNING: These functions can and will break invariants of the Redge
 //! use with extreme care.
 
-use std::{collections::BTreeSet, ops::Mul};
+use std::{
+    collections::{BTreeSet, HashSet},
+    ops::Mul,
+};
 
 use linear_isomorphic::{InnerSpace, RealField, VectorSpace};
 
@@ -22,6 +25,11 @@ pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
     let cycle = mesh.edges_meta[edge_id.to_index()]
         .cycle(active_vertex)
         .clone();
+
+    // This edge should now point to itself since it was removed from the cycle.
+    let cycle_mut = mesh.edges_meta[edge_id.to_index()].cycle_mut(active_vertex);
+    cycle_mut.next_edge = edge_id;
+    cycle_mut.prev_edge = edge_id;
 
     // Attach the prior and next pointers to each other, thus eliminating
     // all references to the current edge.
@@ -47,6 +55,15 @@ pub(crate) fn join_vertex_cycles<R: RedgeContainers>(
         .topology_intersection(qa_meta)
         .expect("Tried to call internal `join_vertex_cycles` with non-overlapping vertices.");
 
+    join_vertex_cycles_at(head1, head2, vertex, mesh);
+}
+
+pub(crate) fn join_vertex_cycles_at<R: RedgeContainers>(
+    head1: EdgeId,
+    head2: EdgeId,
+    vertex: VertId,
+    mesh: &mut Redge<R>,
+) {
     let t1 = mesh.edges_meta[head1.to_index()]
         .cycle(vertex)
         .clone()
@@ -68,7 +85,7 @@ pub(crate) fn join_vertex_cycles<R: RedgeContainers>(
     cycle.prev_edge = t1;
 }
 
-fn _collect_forward_cycle<R: RedgeContainers>(
+pub(crate) fn _collect_forward_cycle<R: RedgeContainers>(
     start: EdgeId,
     vert: VertId,
     mesh: &mut Redge<R>,
@@ -86,7 +103,7 @@ fn _collect_forward_cycle<R: RedgeContainers>(
     collected
 }
 
-fn _collect_backward_cycle<R: RedgeContainers>(
+pub(crate) fn _collect_backward_cycle<R: RedgeContainers>(
     start: EdgeId,
     vert: VertId,
     mesh: &mut Redge<R>,
@@ -105,17 +122,18 @@ fn _collect_backward_cycle<R: RedgeContainers>(
 }
 
 pub(crate) fn join_radial_cycles<R: RedgeContainers>(
-    start: HedgeId,
-    new: HedgeId,
+    head1: HedgeId,
+    head2: HedgeId,
     mesh: &mut Redge<R>,
 ) {
-    let prior = mesh.hedges_meta[start.to_index()].radial_prev_id;
+    let t1 = mesh.hedges_meta[head1.to_index()].radial_prev_id;
+    let t2 = mesh.hedges_meta[head2.to_index()].radial_prev_id;
 
-    mesh.hedges_meta[prior.to_index()].radial_next_id = new;
-    mesh.hedges_meta[new.to_index()].radial_prev_id = prior;
+    mesh.hedges_meta[head1.to_index()].radial_prev_id = t2;
+    mesh.hedges_meta[t2.to_index()].radial_next_id = head1;
 
-    mesh.hedges_meta[start.to_index()].radial_prev_id = new;
-    mesh.hedges_meta[new.to_index()].radial_next_id = start;
+    mesh.hedges_meta[t1.to_index()].radial_next_id = head2;
+    mesh.hedges_meta[head2.to_index()].radial_next_id = t1;
 }
 
 pub(crate) fn remove_hedge_from_radial<R: RedgeContainers>(hedge_id: HedgeId, mesh: &mut Redge<R>) {
@@ -139,12 +157,20 @@ pub(crate) fn remove_hedge_from_radial<R: RedgeContainers>(hedge_id: HedgeId, me
 }
 
 pub(crate) fn disable_vert_meta<R: RedgeContainers>(vert_id: VertId, mesh: &mut Redge<R>) {
+    if vert_id == VertId::ABSENT {
+        return;
+    }
+
     let vert = &mut mesh.verts_meta[vert_id.to_index()];
     vert.is_active = false;
     vert.edge_id = EdgeId::ABSENT;
 }
 
 pub(crate) fn disable_edge_meta<R: RedgeContainers>(edge: EdgeId, mesh: &mut Redge<R>) {
+    if edge == EdgeId::ABSENT {
+        return;
+    }
+
     let edge = &mut mesh.edges_meta[edge.to_index()];
 
     // Break every single pointer in this edge.
@@ -163,6 +189,9 @@ pub(crate) fn disable_edge_meta<R: RedgeContainers>(edge: EdgeId, mesh: &mut Red
 }
 
 pub(crate) fn disable_hedge_meta<R: RedgeContainers>(hedge: HedgeId, mesh: &mut Redge<R>) {
+    if hedge == HedgeId::ABSENT {
+        return;
+    }
     let hedge = &mut mesh.hedges_meta[hedge.to_index()];
 
     hedge.is_active = false;
@@ -176,6 +205,10 @@ pub(crate) fn disable_hedge_meta<R: RedgeContainers>(hedge: HedgeId, mesh: &mut 
 }
 
 pub(crate) fn disable_face_meta<R: RedgeContainers>(face: FaceId, mesh: &mut Redge<R>) {
+    if face == FaceId::ABSENT {
+        return;
+    }
+
     let face = &mut mesh.faces_meta[face.to_index()];
 
     face.is_active = false;
@@ -285,6 +318,92 @@ pub(crate) fn link_face<R: RedgeContainers>(hedges: &[HedgeId], face: FaceId, me
     }
 
     mesh.faces_meta[face.to_index()].hedge_id = hedges[0];
+}
+
+pub(crate) fn hedge_collapse<R: RedgeContainers>(hedge_id: HedgeId, mesh: &mut Redge<R>) {
+    let h0 = hedge_id;
+    let hn = mesh.hedges_meta[h0.to_index()].face_next_id;
+    let hp = mesh.hedges_meta[h0.to_index()].face_prev_id;
+
+    let f = mesh.hedges_meta[h0.to_index()].face_id;
+
+    remove_hedge_from_radial(h0, mesh);
+    disable_hedge_meta(h0, mesh);
+
+    mesh.hedges_meta[hn.to_index()].face_prev_id = hp;
+    mesh.hedges_meta[hp.to_index()].face_next_id = hn;
+
+    mesh.faces_meta[f.to_index()].hedge_id = hn;
+}
+
+pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Redge<R>) {
+    let handle = mesh.face_handle(face_id);
+    debug_assert!(handle.hedge().face_loop().count() == 2);
+
+    let h1 = handle.hedge().id();
+    let h2 = handle.hedge().face_next().id();
+
+    let e1 = handle.hedge().edge().id();
+    let e2 = handle.hedge().face_next().edge().id();
+
+    let v1 = handle.hedge().source().id();
+    let v2 = handle.hedge().face_next().source().id();
+
+    let h1_safe = handle
+        .hedge()
+        .radial_neighbours()
+        .find(|h| h.id() != h1)
+        .map(|h| h.id())
+        .unwrap_or(HedgeId::ABSENT);
+    let h2_safe = handle
+        .hedge()
+        .face_next()
+        .radial_neighbours()
+        .find(|h| h.id() != h2)
+        .map(|h| h.id())
+        .unwrap_or(HedgeId::ABSENT);
+
+    let h2_radials: Vec<_> = mesh
+        .hedge_handle(h2)
+        .radial_neighbours()
+        .map(|h| h.id())
+        .filter(|h| *h != h2)
+        .collect();
+
+    // Joining first matters, maintain thsi order of operations.
+    // (It's simpler to remove from a large linked list than to add to a small one).
+    if h1_safe != HedgeId::ABSENT && h2_safe != HedgeId::ABSENT {
+        join_radial_cycles(h1_safe, h2_safe, mesh);
+    }
+
+    if h1_safe != HedgeId::ABSENT {
+        remove_hedge_from_radial(h1, mesh);
+    }
+    if h2_safe != HedgeId::ABSENT {
+        remove_hedge_from_radial(h2, mesh);
+    }
+
+    for hid in h2_radials {
+        mesh.hedges_meta[hid.to_index()].edge_id = e1;
+    }
+
+    // Make sure the vertices remain valid.
+    mesh.verts_meta[v1.to_index()].edge_id = e1;
+    mesh.verts_meta[v2.to_index()].edge_id = e1;
+
+    mesh.edges_meta[e1.to_index()].hedge_id = if h1_safe != HedgeId::ABSENT {
+        h1_safe
+    } else {
+        h2_safe
+    };
+
+    remove_edge_from_cycle(e2, Endpoint::V1, mesh);
+    remove_edge_from_cycle(e2, Endpoint::V2, mesh);
+
+    disable_edge_meta(e2, mesh);
+    disable_hedge_meta(h1, mesh);
+    disable_hedge_meta(h2, mesh);
+    disable_face_meta(face_id, mesh);
 }
 
 /// Returns, in this order, the two half edges along the direction of the input hedge and the new transversal edge.

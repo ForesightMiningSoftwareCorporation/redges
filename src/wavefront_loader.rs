@@ -191,7 +191,7 @@ impl ObjData {
 }
 
 pub trait WaveFrontCompatible<'a> {
-    type Scalar: num_traits::Float + Debug + AddAssign + Display;
+    type Scalar: num_traits::Float + Debug + Display;
 
     fn pos_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]>;
     fn uv_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 2]>;
@@ -244,7 +244,7 @@ impl<'a> WaveFrontCompatible<'a> for ObjData {
 impl<'a, V, S> WaveFrontCompatible<'a> for Vec<V>
 where
     V: Index<usize, Output = S>,
-    S: num_traits::Float + AddAssign + Display + Debug,
+    S: num_traits::Float + Display + Debug,
 {
     type Scalar = S;
 
@@ -283,7 +283,7 @@ where
 impl<'a, V, S> WaveFrontCompatible<'a> for (&Vec<V>, &Vec<usize>)
 where
     V: Index<usize, Output = S>,
-    S: num_traits::Float + AddAssign + Display + Debug,
+    S: num_traits::Float + Display + Debug,
 {
     type Scalar = S;
 
@@ -322,7 +322,7 @@ where
 impl<'a, V, S, I> WaveFrontCompatible<'a> for (&Vec<V>, &Vec<Vec<I>>)
 where
     V: Index<usize, Output = S>,
-    S: num_traits::Float + AddAssign + Display + Debug,
+    S: num_traits::Float + Display + Debug,
     usize: TryFrom<I>,
     I: num_traits::PrimInt + std::fmt::Display,
 {
@@ -365,7 +365,7 @@ where
 impl<'a, V, S, I> WaveFrontCompatible<'a> for (&Vec<V>, &Vec<[I; 2]>)
 where
     V: VectorSpace<Scalar = S>,
-    S: num_traits::Float + AddAssign + Display + Debug,
+    S: num_traits::Float + Display + Debug,
     usize: TryFrom<I>,
     I: num_traits::PrimInt + Display,
 {
