@@ -2,7 +2,8 @@ use crate::container_trait::{RedgeContainers, VertData};
 use crate::edge_handle::EdgeHandle;
 
 use crate::iterators::{
-    VertIncidentFacesIterator, VertexLinkEdgesIter, VertexStarEdgesIter, VertexStarVerticesIter,
+    VertIncidentFacesIterator, VertManifoldIncidentFacesIterator, VertexLinkEdgesIter,
+    VertexStarEdgesIter, VertexStarVerticesIter,
 };
 use crate::EdgeId;
 use crate::{container_trait::PrimitiveContainer, Redge, VertId, VertMetaData};
@@ -55,6 +56,12 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
 
     pub fn incident_faces(&self) -> VertIncidentFacesIterator<'r, R> {
         VertIncidentFacesIterator::new(self.id, self.redge)
+    }
+
+    /// WARNING: Call only if you know that the vertex is locally manifold.
+    /// Otherwise there's no guarantees as to what this method will do.
+    pub fn incident_faces_manifold(&self) -> VertManifoldIncidentFacesIterator<'r, R> {
+        VertManifoldIncidentFacesIterator::new(self.id, self.redge)
     }
 
     pub fn is_in_boundary(&self) -> bool {

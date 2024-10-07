@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use crate::VertId;
+
 pub trait PrimitiveContainer: Clone + Debug {
     type PrimitiveData: Clone + Debug;
 
@@ -117,4 +119,16 @@ where
     type VertContainer = V;
     type EdgeContainer = E;
     type FaceContainer = F;
+}
+
+pub trait FaceAttributeGetter<S> {
+    fn attribute_count(&self) -> usize;
+    fn attribute(&self, vert_index: usize, attribute_id: usize) -> S;
+}
+
+/// The `x,y,z` coordinates should be attributes 0, 1, 2 respectively. So
+/// any vertex *must* have at least three attributes.
+pub trait VertexAttributeGetter<S> {
+    fn attribute_count(&self) -> usize;
+    fn attribute(&self, attribute_id: usize) -> S;
 }

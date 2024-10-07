@@ -11,11 +11,10 @@ pub mod hedge_handle;
 pub mod helpers;
 pub mod iterators;
 pub mod mesh_deleter;
-pub mod quadric_simplification;
-mod quadrics;
-pub mod queue;
 pub mod validation;
 pub mod vert_handle;
+
+pub use algorithms::quadric_simplification;
 
 use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, VertData};
 use edge_handle::EdgeHandle;
