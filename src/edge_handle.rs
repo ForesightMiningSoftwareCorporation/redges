@@ -110,6 +110,10 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
             return false;
         }
 
+        if count != 2 {
+            return false;
+        }
+
         // Imagine, for example a triangulated strip:
         // *---*
         // |\  |

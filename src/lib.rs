@@ -15,6 +15,7 @@ pub mod validation;
 pub mod vert_handle;
 
 pub use algorithms::quadric_simplification;
+pub mod queue;
 
 use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, VertData};
 use edge_handle::EdgeHandle;
