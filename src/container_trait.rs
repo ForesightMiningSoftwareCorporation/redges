@@ -1,4 +1,7 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, usize};
+
+use linear_isomorphic::{InnerSpace, RealField};
+use nalgebra::Vector3;
 
 use crate::VertId;
 
@@ -124,6 +127,31 @@ where
 pub trait FaceAttributeGetter<S> {
     fn attribute_count(&self) -> usize;
     fn attribute(&self, vert_index: usize, attribute_id: usize) -> S;
+    fn attribute_mut(&mut self, vert_index: usize, attribute_id: usize) -> &mut S;
+    fn inner_index(&self, vid: VertId) -> usize;
+    fn attribute_vertices(&mut self) -> &mut [VertId];
+}
+
+impl<S> FaceAttributeGetter<S> for () {
+    fn attribute_count(&self) -> usize {
+        0
+    }
+
+    fn attribute(&self, _vert_index: usize, _attribute_id: usize) -> S {
+        panic!()
+    }
+
+    fn attribute_mut(&mut self, _vert_index: usize, _attribute_id: usize) -> &mut S {
+        panic!()
+    }
+
+    fn attribute_vertices(&mut self) -> &mut [VertId] {
+        panic!()
+    }
+
+    fn inner_index(&self, _vid: VertId) -> usize {
+        usize::MAX
+    }
 }
 
 /// The `x,y,z` coordinates should be attributes 0, 1, 2 respectively. So
@@ -131,4 +159,17 @@ pub trait FaceAttributeGetter<S> {
 pub trait VertexAttributeGetter<S> {
     fn attribute_count(&self) -> usize;
     fn attribute(&self, attribute_id: usize) -> S;
+}
+
+impl<S> VertexAttributeGetter<S> for Vector3<S>
+where
+    S: RealField,
+{
+    fn attribute_count(&self) -> usize {
+        3
+    }
+
+    fn attribute(&self, attribute_id: usize) -> S {
+        self[attribute_id]
+    }
 }

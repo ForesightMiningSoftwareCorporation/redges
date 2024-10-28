@@ -32,7 +32,7 @@ mod wavefront_loader;
 macro_rules! define_id_struct {
     ($name:ident) => {
         #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
-        pub struct $name(usize);
+        pub struct $name(pub usize);
         impl Default for $name {
             fn default() -> Self {
                 Self(ABSENT)
@@ -352,9 +352,10 @@ impl<R: RedgeContainers> Redge<R> {
     /// Since the defragmentation won't be applied until destruction of the deleter, these vertices
     /// will be exported, despite being innactive, to preserve indexing. So if you encounter
     /// ghost or nan vertices in the returned data, check whether those vertices are innactive.
-    pub fn to_face_list(&self) -> (Vec<VertData<R>>, Vec<Vec<usize>>) {
+    pub fn to_face_list(&self) -> (Vec<VertData<R>>, Vec<Vec<usize>>, Vec<FaceData<R>>) {
         let verts = self.vert_data.iterate().cloned().collect();
-        let mut faces = Vec::with_capacity(self.faces_meta.len());
+        let mut face_indices = Vec::with_capacity(self.faces_meta.len());
+        let mut face_data = Vec::with_capacity(self.faces_meta.len());
 
         for face in &self.faces_meta {
             if !face.is_active {
@@ -379,10 +380,11 @@ impl<R: RedgeContainers> Redge<R> {
                 }
             }
 
-            faces.push(current_face);
+            face_indices.push(current_face);
+            face_data.push(self.face_data.get(face.id.to_index() as u64).clone());
         }
 
-        (verts, faces)
+        (verts, face_indices, face_data)
     }
 
     /// This can only be applied to a non-boundary manifold edge, and only if the incident faces are triangular.
