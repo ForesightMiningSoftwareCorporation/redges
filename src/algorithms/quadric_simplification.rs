@@ -163,7 +163,7 @@ where
                 let f2 = edge_handle.hedge().radial_next().face().id();
                 let v1 = edge_handle.v1().id();
                 let v2 = edge_handle.v2().id();
-                wedges.verify(deleter.mesh());
+                // wedges.verify(deleter.mesh());
 
                 let vid = deleter.collapse_edge(eid);
                 wedges.collapse_edge(
@@ -174,7 +174,7 @@ where
                     v2,
                     &deleter.mesh.vert_handle(vid),
                 );
-                wedges.verify(deleter.mesh());
+                // wedges.verify(deleter.mesh());
 
                 deleter.mesh().vert_data(vid)[0] = optimum[0];
                 deleter.mesh().vert_data(vid)[1] = optimum[1];
@@ -313,7 +313,7 @@ where
             (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap(),
         );
     }
-    // Id the edge does not have a hedge, it's an isolated one, we REALLY should be collapsing this one.
+    // If the edge does not have a hedge, it's an isolated one, we REALLY should be collapsing this one.
     if !edge.has_hedge() {
         return (S::from(S::min_value()).unwrap(), edge.v1().data().clone());
     }
@@ -363,30 +363,25 @@ where
         qe += border_quadric;
     }
 
-    let res = match qe.optimize() {
-        Some((s, v)) => (s, v),
-        None => {
-            let v1 = edge.v1().data().clone();
-            let v2 = edge.v2().data().clone();
-            let mid = (v1.clone() + v2.clone()) * S::from(0.5).unwrap();
+    qe.optimize().unwrap_or_else(|| {
+        let v1 = edge.v1().data().clone();
+        let v2 = edge.v2().data().clone();
+        let mid = (v1.clone() + v2.clone()) * S::from(0.5).unwrap();
 
-            let c1 = qe.error(v1.clone());
-            let c2 = qe.error(v2.clone());
-            let cm = qe.error(mid.clone());
+        let c1 = qe.error(v1.clone());
+        let c2 = qe.error(v2.clone());
+        let cm = qe.error(mid.clone());
 
-            let candidates = [(c1, v1), (c2, v2), (cm, mid)];
+        let candidates = [(c1, v1), (c2, v2), (cm, mid)];
 
-            let best = candidates
-                .iter()
-                .min_by(|(a, _), (b, _)| a.total_cmp(b))
-                .unwrap()
-                .clone();
+        let best = candidates
+            .iter()
+            .min_by(|(a, _), (b, _)| a.total_cmp(b))
+            .unwrap()
+            .clone();
 
-            best
-        }
-    };
-
-    res
+        best
+    })
 }
 
 fn edge_cost_with_wedges<'r, S, R: RedgeContainers>(
@@ -405,7 +400,6 @@ where
         let det = q.determinant();
         // Safety check to prevent numerical problems when solving the system.
         if Float::abs(det) < S::from(0.1).unwrap() {
-            println!("failed with {}\n{}", det, q);
             return None;
         }
         q.clone().lu().solve(&-b.clone())
@@ -427,7 +421,7 @@ where
             res[1] = mid[1];
             res[2] = mid[2];
 
-            //TODO hack for now just to see what happens
+            //TODO hack for now just to see what happens. We must fill in the values of this vector, not just let them be 0.
 
             (res, S::from(EDGE_WEIGHT_PENALTY * 100.).unwrap())
         }
@@ -632,7 +626,7 @@ where
             .hedge()
             .face_loop()
             .find(|h| h.source().id() == v1 || h.source().id() == v2)
-            .expect("If you are seeing this, the topology of the redge is broken.")
+            .expect("Internal error: the topology of the redge is broken.")
             .id();
 
         let hedge_at_point = edge.redge.hedge_handle(hedge_at_point);
@@ -652,20 +646,14 @@ where
     false
 }
 
-struct Wedges<S>
-where
-    S: RealField,
-{
+struct Wedges<S: RealField> {
     // TODO: this should be extracted from the faces in the redge, so this field should
     // not exist, we are just wasting memory here, but it makes implementation easier for now.
     wedge_values: Vec<DVector<S>>,
     vertices_to_wedges: BTreeMap<VertId, Vec<(usize, FaceId)>>,
 }
 
-impl<S> Wedges<S>
-where
-    S: RealField,
-{
+impl<S: RealField> Wedges<S> {
     fn new() -> Self {
         Self {
             wedge_values: Vec::new(),
@@ -774,12 +762,6 @@ where
         self.vertices_to_wedges.remove(&deleted);
 
         let wedges = self.vert_wedges::<R>(vert.id());
-
-        // println!(
-        //     "dimensions {} {}",
-        //     wedges.0.len(),
-        //     (optimum.len() - 3) / wedges.0[0].len()
-        // );
     }
 
     fn face_corner_wedge_id<'r, R>(
