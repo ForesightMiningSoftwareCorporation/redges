@@ -202,6 +202,50 @@ impl<'r, R: RedgeContainers> Iterator for VertIncidentFacesIterator<'r, R> {
     }
 }
 
+pub struct VertManifoldIncidentFacesIterator<'r, R: RedgeContainers> {
+    last_face: FaceId,
+    edge_iter: VertexStarEdgesIter<'r, R>,
+    redge: &'r Redge<R>,
+}
+
+impl<'r, R: RedgeContainers> VertManifoldIncidentFacesIterator<'r, R> {
+    pub fn new(vert_id: VertId, redge: &'r Redge<R>) -> Self {
+        let vhandle = redge.vert_handle(vert_id);
+
+        Self {
+            last_face: FaceId::ABSENT,
+            edge_iter: vhandle.star_edges(),
+            redge,
+        }
+    }
+}
+
+impl<'r, R: RedgeContainers> Iterator for VertManifoldIncidentFacesIterator<'r, R> {
+    type Item = FaceHandle<'r, R>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let edge = self.edge_iter.next();
+            if edge.is_none() {
+                return None;
+            }
+            let edge = edge.unwrap();
+
+            if let Some(fid) = edge
+                .hedge()
+                .radial_neighbours()
+                .map(|h| h.face().id())
+                .find(|f| *f != self.last_face)
+            {
+                self.last_face = fid;
+                break;
+            }
+        }
+
+        Some(FaceHandle::new(self.last_face, self.redge))
+    }
+}
+
 pub struct RadialHedgeIter<'r, R: RedgeContainers> {
     start_hedge: HedgeId,
     current_hedge: HedgeId,

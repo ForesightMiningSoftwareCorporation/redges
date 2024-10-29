@@ -99,13 +99,16 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         let v1 = self.v1();
         let v2 = self.v2();
 
-        // If vertices adjacent to the opposite vertices to the edge overlap,
-        // this edge cannot be collapsed.
+        // If there's more than two vertices in the intersection of the neighbours of the endpoints of the edge,
+        // then collapsing this edge will break topology. This happens when there is an edge connecting
+        // the opposite vertices.
         // TODO: this logic was designed for triangular faces, it's not certain it works on polygonal ones.
-        let set1: BTreeSet<VertId> = BTreeSet::from_iter(v1.neighbours().map(|v| v.id()));
-        let set2: BTreeSet<VertId> = BTreeSet::from_iter(v2.neighbours().map(|v| v.id()));
+        let set1: Vec<VertId> = v1.neighbours().map(|v| v.id()).collect();
+        let count = v2.neighbours().filter(|v| set1.contains(&v.id())).count();
 
-        let count = set1.intersection(&set2).count();
+        if count != 2 {
+            return false;
+        }
 
         if count != 2 {
             return false;
