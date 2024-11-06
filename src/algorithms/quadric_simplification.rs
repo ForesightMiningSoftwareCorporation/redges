@@ -12,14 +12,16 @@ use crate::{
     edge_handle::EdgeHandle,
     face_handle::{FaceDegeneracies, FaceHandle, FaceMetrics},
     mesh_deleter::MeshDeleter,
-    validation::{correctness_state, RedgeCorrectness},
+    validation::{
+        correctness_state, validate_geometry_state, GeometryCorrectness, RedgeCorrectness,
+    },
     vert_handle::VertHandle,
     wavefront_loader::ObjData,
     EdgeId, FaceId, VertId,
 };
 use linear_isomorphic::prelude::*;
 use nalgebra::{ComplexField, DMatrix, DVector, Vector4};
-use num::{traits::float::FloatCore, Float};
+use num::{traits::float::FloatCore, Bounded, Float, Signed};
 use num_traits::float::TotalOrder;
 
 use crate::{container_trait::RedgeContainers, Redge};
@@ -57,6 +59,43 @@ impl Default for QuadricSimplificationConfig {
     }
 }
 
+fn tmp_export_to_obj<Vec3: linear_isomorphic::InnerSpace<S>, S: RealField, R: RedgeContainers>(
+    vertices: &[Vec3],
+    faces: &Vec<FaceData<R>>,
+    path: &str,
+) -> std::io::Result<()>
+where
+    FaceData<R>: FaceAttributeGetter<S>,
+{
+    use std::io::Write;
+    let mut file = std::fs::File::create(path)?;
+    for v in vertices {
+        writeln!(file, "v {} {} {}", v[0], v[1], v[2],)?;
+    }
+
+    for face in faces {
+        writeln!(file, "vt {} {}", face.attribute(0, 0), face.attribute(0, 1))?;
+        writeln!(file, "vt {} {}", face.attribute(1, 0), face.attribute(1, 1))?;
+        writeln!(file, "vt {} {}", face.attribute(2, 0), face.attribute(2, 1))?;
+    }
+
+    for (i, face) in faces.iter().enumerate() {
+        let verts = face.attribute_vertices().to_vec();
+        writeln!(
+            file,
+            "f {}/{} {}/{} {}/{}",
+            verts[0].to_index() + 1,
+            i * 3 + 1, // vt
+            verts[1].to_index() + 1,
+            i * 3 + 2, // vt
+            verts[2].to_index() + 1,
+            i * 3 + 3, // vt
+        )?;
+    }
+
+    Ok(())
+}
+
 // Theory: https://www.cs.cmu.edu/~./garland/Papers/quadrics.pdf
 //         https://hhoppe.com/newqem.pdf
 /// Uses quadric distances to reduce the total number of edges until a target face count is reached.
@@ -72,7 +111,9 @@ where
         + FloatCore
         + Mul<VertData<R>, Output = VertData<R>>
         + TotalOrder
-        + std::iter::Sum,
+        + std::iter::Sum
+        + Bounded
+        + Signed,
     VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
     FaceData<R>: FaceAttributeGetter<S>,
     L: Fn(VertId, &Redge<R>) -> bool,
@@ -87,11 +128,17 @@ where
         *mesh.vert_data.get_mut(i as u64) = pos * scale;
     }
 
+    let (vs, _fs, fs_data) = mesh.to_face_list();
+    tmp_export_to_obj::<_, _, R>(&vs, &fs_data, "input.obj").unwrap();
     let mut wedges = construct_wedges(&mesh);
+
     // Start the queue with each edge's cost.
     let mut queue = initialize_queue::<S, R>(&mesh, &config, &wedges);
 
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
+    let (vs, fs, fs_data) = deleter.mesh.to_face_list();
+    tmp_export_to_obj::<_, _, R>(&vs, &fs_data, format!("start.obj").as_str()).unwrap();
+
     let mut dbg = 0;
     let mut worst_cost = <S as Float>::min_value();
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
@@ -124,7 +171,20 @@ where
             continue;
         }
 
-        let (cost, optimum) = edge_cost(&edge_handle);
+        let (cost, optimum) = match config.attribute_simplification {
+            AttributeSimplification::NoAttributeSimplification => edge_cost(&edge_handle),
+            AttributeSimplification::SimplifyAtributes => {
+                let (cost, optimum, _) = edge_cost_with_wedges(&edge_handle, &wedges);
+
+                let mut geom_optimum = VertData::<R>::default();
+                geom_optimum[0] = optimum[0];
+                geom_optimum[1] = optimum[1];
+                geom_optimum[2] = optimum[2];
+
+                (cost, geom_optimum)
+            }
+        };
+
         if collapse_would_flip_normal(&edge_handle, &optimum) {
             continue;
         }
@@ -151,6 +211,7 @@ where
             AttributeSimplification::NoAttributeSimplification => {
                 let (_, optimum) = edge_cost(&edge_handle);
                 let vid = deleter.collapse_edge(eid);
+
                 // Update the position of the collapsed vertex to that wich minimizes the
                 // quadric error.
                 *deleter.mesh().vert_data(vid) = optimum;
@@ -158,7 +219,8 @@ where
                 vid
             }
             AttributeSimplification::SimplifyAtributes => {
-                let (_, optimum) = edge_cost_with_wedges(&edge_handle, &wedges);
+                let (_, optimum, local_wedge_to_global_wedge) =
+                    edge_cost_with_wedges(&edge_handle, &wedges);
                 let f1 = edge_handle.hedge().face().id();
                 let f2 = edge_handle.hedge().radial_next().face().id();
                 let v1 = edge_handle.v1().id();
@@ -166,6 +228,7 @@ where
                 // wedges.verify(deleter.mesh());
 
                 let vid = deleter.collapse_edge(eid);
+                deleter.update_face_corners(vid);
                 wedges.collapse_edge(
                     optimum.clone(),
                     f1,
@@ -173,12 +236,59 @@ where
                     v1,
                     v2,
                     &deleter.mesh.vert_handle(vid),
+                    local_wedge_to_global_wedge,
                 );
+
+                // debug validation
+                for i in 0..deleter.mesh.vert_count() {
+                    if !deleter.mesh.face_handle(FaceId(i)).is_active() {
+                        continue;
+                    }
+                    let set1: BTreeSet<_> =
+                        fs_data[i].attribute_vertices().iter().copied().collect();
+                    let set2: BTreeSet<_> = fs[i].iter().map(|i| VertId(*i as usize)).collect();
+
+                    assert!(set1 == set2);
+                }
+                tmp_export_to_obj::<_, _, R>(&vs, &fs_data, format!("step_{}.obj", dbg).as_str())
+                    .unwrap();
+                // std::process::exit(0);
+                ObjData::export(&(&vs, &fs), format!("check_{}.obj", dbg).as_str());
+
                 // wedges.verify(deleter.mesh());
 
                 deleter.mesh().vert_data(vid)[0] = optimum[0];
                 deleter.mesh().vert_data(vid)[1] = optimum[1];
                 deleter.mesh().vert_data(vid)[2] = optimum[2];
+
+                let state = validate_geometry_state(&deleter.mesh, S::from(0.00001).unwrap());
+                let (vs, fs, fs_data) = deleter.mesh.to_face_list();
+                match state {
+                    GeometryCorrectness::DuplicatePoints(v1, v2) => {
+                        println!(
+                            "duplicates {} {:?} {:?}",
+                            dbg,
+                            deleter.mesh.vert_handle(v1).data(),
+                            deleter.mesh.vert_handle(v2).data(),
+                        );
+                        let (vs, fs, fs_data) = deleter.mesh.to_face_list();
+                        tmp_export_to_obj::<_, _, R>(
+                            &vs,
+                            &fs_data,
+                            format!("very_broken_{}.obj", dbg).as_str(),
+                        )
+                        .unwrap();
+                        ObjData::export(
+                            &vec![
+                                deleter.mesh.vert_handle(v1).data().clone(),
+                                deleter.mesh.vert_handle(v2).data().clone(),
+                            ],
+                            "points.obj",
+                        );
+                    }
+                    _ => {}
+                }
+                assert!(state == GeometryCorrectness::Correct, "{:?}", state);
 
                 let faces: Vec<_> = deleter
                     .mesh()
@@ -191,7 +301,7 @@ where
                 // we must update the vertex indices of the relevant faces.
                 for fid in &faces {
                     let data = deleter.mesh.face_data.get_mut(fid.to_index() as u64);
-                    let vids = data.attribute_vertices().to_vec();
+                    let vids = data.attribute_vertices_mut().to_vec();
 
                     let face = deleter.mesh.face_handle(*fid);
                     let updated: Vec<_> =
@@ -199,7 +309,7 @@ where
                     // If we find a mismatched vertex index, we need to update the face.
                     if let Some(mismatched) = vids.iter().position(|id| !updated.contains(&id)) {
                         let data = deleter.mesh.face_data.get_mut(fid.to_index() as u64);
-                        data.attribute_vertices()[mismatched] = vid;
+                        data.attribute_vertices_mut()[mismatched] = vid;
                     }
                 }
 
@@ -239,6 +349,24 @@ where
         *deleter.mesh.vert_data.get_mut(i as u64) = pos * (S::from(1.0).unwrap() / scale);
     }
 
+    // Update the face attributes from the wedge data before returning.
+    let active_faces: Vec<_> = deleter.mesh.meta_faces().map(|f| f.id()).collect();
+    for fid in active_faces {
+        let face_handle = deleter.mesh.face_handle(fid);
+        let corners: Vec<_> = face_handle.vertex_ids().collect();
+        let wedge_values: Vec<_> = corners
+            .iter()
+            .map(|vid| wedges.face_corner_wedge(*vid, &face_handle).unwrap())
+            .collect();
+
+        for (vindex, val) in wedge_values.iter().enumerate() {
+            let face_data = deleter.mesh.face_data(fid);
+            for i in 3..val.len() {
+                *face_data.attribute_mut(vindex, i - 3) = val[i];
+            }
+        }
+    }
+
     let (vert_frag, ..) = deleter.compute_fragmentation_maps();
     let mut res = deleter.end_deletion();
     debug_assert!(correctness_state(&res) == RedgeCorrectness::Correct);
@@ -246,7 +374,7 @@ where
     // Update face connectivity upon termination.
     for face in 0..res.face_count() {
         let f = res.face_data.get_mut(face as u64);
-        for v in f.attribute_vertices() {
+        for v in f.attribute_vertices_mut() {
             *v = VertId(*vert_frag.get(&*v).unwrap());
         }
     }
@@ -278,7 +406,7 @@ where
                 queue.push(cost, edge.id().to_index() as u32);
             }
             AttributeSimplification::SimplifyAtributes => {
-                let (cost, _optimum) = edge_cost_with_wedges(&edge, &wedges);
+                let (cost, _optimum, _) = edge_cost_with_wedges(&edge, &wedges);
                 queue.push(cost, edge.id().to_index() as u32);
             }
         }
@@ -387,14 +515,14 @@ where
 fn edge_cost_with_wedges<'r, S, R: RedgeContainers>(
     edge: &EdgeHandle<'r, R>,
     wedges: &Wedges<S>,
-) -> (S, nalgebra::DVector<S>)
+) -> (S, nalgebra::DVector<S>, BTreeMap<usize, usize>)
 where
     S: RealField + Mul<VertData<R>, Output = VertData<R>> + ComplexField,
     VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
     FaceData<R>: FaceAttributeGetter<S>,
 {
     let redge = edge.redge;
-    let (q, b, d) = wedge_quadric(edge.id(), redge, wedges);
+    let (q, b, d, local_wedge_to_global_wedge) = wedge_quadric(edge.id(), redge, wedges, false);
 
     let solve = || {
         let det = q.determinant();
@@ -411,9 +539,14 @@ where
                 + b.transpose() * &optimal * S::from(2.).unwrap())[0]
                 + d;
 
+            println!("did solve");
+
             (optimal, cost)
         }
+        // If we could not solve the prior system then we will cheat a little bit and solve an easier one.
         None => {
+            println!("could not solve");
+
             let mid = (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap();
             let mut res = DVector::zeros(q.nrows());
 
@@ -421,33 +554,45 @@ where
             res[1] = mid[1];
             res[2] = mid[2];
 
-            //TODO hack for now just to see what happens. We must fill in the values of this vector, not just let them be 0.
+            let p = nalgebra::Vector3::new(mid[0], mid[1], mid[2]);
+
+            let b_low = b.rows(3, b.nrows() - 3);
+            let q_left_low = q.view((3, 0), (q.nrows() - 3, 3));
+            let s = -b_low - q_left_low * p;
+            assert!(s.len() == res.len() - 3);
+            for i in 3..res.len() {
+                res[i] = s[i - 3];
+            }
 
             (res, S::from(EDGE_WEIGHT_PENALTY * 100.).unwrap())
         }
     };
 
-    assert!(cost.is_finite(), "{} optimal {} res {}", q, optimal, -b);
-    (cost, optimal)
+    assert!(cost.is_finite());
+    (cost, optimal, local_wedge_to_global_wedge)
 }
 
 fn wedge_quadric<'r, S, R: RedgeContainers>(
     edge: EdgeId,
     redge: &Redge<R>,
     wedges: &Wedges<S>,
-) -> (DMatrix<S>, DVector<S>, S)
+    fix_position: bool,
+) -> (DMatrix<S>, DVector<S>, S, BTreeMap<usize, usize>)
 where
     S: RealField + Mul<VertData<R>, Output = VertData<R>> + ComplexField,
     VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
     FaceData<R>: FaceAttributeGetter<S>,
 {
     let edge = redge.edge_handle(edge);
+    let v1_id = edge.v1().id();
+    let v2_id = edge.v2().id();
     let (wedges_1, faces_1) = wedges.vert_wedges::<R>(edge.v1().id());
-    let (wedges_2, faces_2) = wedges.vert_wedges::<R>(edge.v2().id());
+    let (_wedges_2, faces_2) = wedges.vert_wedges::<R>(edge.v2().id());
 
     let woffset = wedges_1.len();
     let mut wedge_faces = BTreeMap::new();
 
+    // The two faces incident on the edge will be removed after the collapse, so ignore them.
     let bad_f1 = edge.hedge().face().id();
     let bad_f2 = edge.hedge().radial_next().face().id();
     for (fid, wid) in faces_1 {
@@ -465,6 +610,7 @@ where
         list.push(redge.face_handle(fid));
     }
 
+    // At this point the `wedge_faces` tells us the local association between the kept face sand their wedges.
     let attribute_count = edge.hedge().face().data().attribute_count();
     let n = 3 + wedge_faces.len() * attribute_count;
     let mut final_mat = DMatrix::<S>::zeros(n, n);
@@ -472,15 +618,26 @@ where
     let mut cum_d = S::from(0.).unwrap();
 
     let mut wedge_count = 0;
-    let dbg = wedge_faces.len();
+    let mut local_wedge_to_global_wedge = BTreeMap::<usize, usize>::new();
     for (_, face_list) in wedge_faces {
         let offset = wedge_count * attribute_count;
         assert!(!face_list.is_empty());
 
+        let wid = wedges
+            .face_corner_wedge_id(v1_id, &face_list[0])
+            .unwrap_or_else(|| wedges.face_corner_wedge_id(v2_id, &face_list[0]).unwrap());
+        local_wedge_to_global_wedge.insert(wedge_count, wid);
+
         for face in face_list {
+            if !face.is_active() {
+                continue;
+            }
             let pos = face.hedge().source().data().clone();
             let p = nalgebra::Vector3::new(pos[0], pos[1], pos[2]);
 
+            // This coefficient will be 0 if the position is fixed, and thus will shut down
+            // the geometric coefficients.
+            let fixed_pos_coeff = S::from(!fix_position as u8).unwrap();
             let normal = face.unit_normal();
             let mut normal = nalgebra::Vector3::new(normal[0], normal[1], normal[2]);
 
@@ -491,17 +648,24 @@ where
                 normal.z = S::from(0.0).unwrap();
             }
 
-            let d = -normal.dot(&p);
-            let dn = normal * d;
+            let d = -normal.dot(&p) * fixed_pos_coeff;
+            let dn = normal * d * fixed_pos_coeff;
 
             final_b[0] += dn[0];
             final_b[1] += dn[1];
             final_b[2] += dn[2];
 
-            let mut corner_mat = normal * normal.transpose();
+            let mut corner_mat = normal * normal.transpose() * fixed_pos_coeff;
+            for i in 0..3 {
+                corner_mat[(i, i)] += S::from(fix_position as u8).unwrap();
+            }
 
-            cum_d += d * d;
+            cum_d += d * d * fixed_pos_coeff;
 
+            if face.vertices().next().unwrap().id().to_index() == 1276 {
+                let (vs, fs, fs_data) = redge.to_face_list();
+                tmp_export_to_obj::<_, _, R>(&vs, &fs_data, "very_broken.obj").unwrap();
+            }
             let positions: Vec<_> = face
                 .vertices()
                 .map(|v| {
@@ -512,6 +676,10 @@ where
             let face_attribute_count = face.data().attribute_count();
             let mut face_attribs = [DVector::zeros(0), DVector::zeros(0), DVector::zeros(0)];
             for (i, v) in face.vertex_ids().enumerate() {
+                if !face.is_active() {
+                    continue;
+                }
+
                 face_attribs[i] = wedges.face_corner_wedge(v, &face).unwrap();
             }
 
@@ -551,7 +719,7 @@ where
 
     assert!(3 + wedge_count * attribute_count == final_mat.nrows());
 
-    (final_mat, final_b, cum_d)
+    (final_mat, final_b, cum_d, local_wedge_to_global_wedge)
 }
 
 fn attribute_gradient<'r, S>(
@@ -677,7 +845,7 @@ impl<S: RealField> Wedges<S> {
         let mut existing_wedge_id = usize::MAX;
         for (wedge_id, _) in wedge_list.iter() {
             let v = &self.wedge_values[*wedge_id];
-            if S::from_real((v.clone() - value.clone()).norm()) < S::from(0.01).unwrap() {
+            if S::from_real((v.clone() - value.clone()).norm()) < S::from(0.1).unwrap() {
                 existing_wedge_id = *wedge_id;
                 break;
             }
@@ -728,6 +896,7 @@ impl<S: RealField> Wedges<S> {
         v1: VertId,
         v2: VertId,
         vert: &VertHandle<'r, R>,
+        local_wedge_to_global_wedge: BTreeMap<usize, usize>,
     ) where
         R: RedgeContainers,
         FaceData<R>: FaceAttributeGetter<S>,
@@ -761,7 +930,14 @@ impl<S: RealField> Wedges<S> {
 
         self.vertices_to_wedges.remove(&deleted);
 
-        let wedges = self.vert_wedges::<R>(vert.id());
+        let attrib_count = vert.edge().hedge().face().data().attribute_count();
+        for (local_idx, global_idx) in local_wedge_to_global_wedge {
+            let local_attributes =
+                optimum.view((3 + local_idx * attrib_count, 0), (attrib_count, 1));
+            for i in 0..local_attributes.len() {
+                self.wedge_values[global_idx][i] = local_attributes[i];
+            }
+        }
     }
 
     fn face_corner_wedge_id<'r, R>(

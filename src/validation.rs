@@ -5,11 +5,18 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt::Debug,
     iter,
+    marker::PhantomData,
 };
 
+use linear_isomorphic::{InnerSpace, RealField};
+use num::{Bounded, Signed};
+use num_traits::real::Real;
+use rstar::{Point, RTree};
+
 use crate::{
-    container_trait::{PrimitiveContainer, RedgeContainers},
+    container_trait::{PrimitiveContainer, RedgeContainers, VertData},
     helpers::check_edge_vertex_cycles,
     EdgeId, Endpoint, HedgeId, Redge, VertId,
 };
@@ -384,4 +391,94 @@ pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness 
     }
 
     RedgeManifoldness::IsManifold
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum GeometryCorrectness {
+    Correct,
+    RedgeIsBroken(RedgeCorrectness),
+    DuplicatePoints(VertId, VertId),
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+struct TreePoint<V: InnerSpace<S> + Debug, S: RealField> {
+    point: V,
+    id: VertId,
+    _phantom_data: PhantomData<S>,
+}
+
+impl<V: Debug + InnerSpace<S>, S: RealField> PartialEq for TreePoint<V, S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.point[0] == other.point[0]
+            && self.point[1] == other.point[1]
+            && self.point[2] == other.point[2]
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+}
+
+impl<V: InnerSpace<S> + Debug, S: RealField + Signed + Bounded> rstar::Point for TreePoint<V, S> {
+    type Scalar = S;
+    const DIMENSIONS: usize = 3;
+
+    fn generate(mut generator: impl FnMut(usize) -> Self::Scalar) -> Self {
+        let mut v = V::default();
+        v[0] = generator(0);
+        v[1] = generator(1);
+        v[2] = generator(2);
+
+        TreePoint {
+            point: v,
+            id: VertId::ABSENT,
+            _phantom_data: PhantomData,
+        }
+    }
+
+    fn nth(&self, index: usize) -> Self::Scalar {
+        self.point[index]
+    }
+
+    fn nth_mut(&mut self, index: usize) -> &mut Self::Scalar {
+        &mut self.point[index]
+    }
+}
+
+pub fn validate_geometry_state<R: RedgeContainers, S: RealField + Bounded + Signed>(
+    mesh: &Redge<R>,
+    epsilon: S,
+) -> GeometryCorrectness
+where
+    VertData<R>: InnerSpace<S>,
+{
+    match correctness_state(mesh) {
+        RedgeCorrectness::Correct => {}
+        x => return GeometryCorrectness::RedgeIsBroken(x),
+    };
+
+    let mut point_set = RTree::<TreePoint<VertData<R>, S>, _>::new();
+
+    for v in mesh.meta_verts() {
+        let point_to_insert = v.data().clone();
+        let test_point = TreePoint {
+            point: point_to_insert.clone(),
+            id: v.id(),
+            _phantom_data: PhantomData,
+        };
+        match point_set.nearest_neighbor(&test_point) {
+            Some(tree_point) => {
+                if (tree_point.point.clone() - point_to_insert.clone()).norm_squared() <= epsilon {
+                    return GeometryCorrectness::DuplicatePoints(tree_point.id, test_point.id);
+                } else {
+                    point_set.insert(test_point);
+                }
+            }
+            None => {
+                point_set.insert(test_point);
+            }
+        }
+    }
+
+    GeometryCorrectness::Correct
 }

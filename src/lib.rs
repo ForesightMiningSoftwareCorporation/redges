@@ -385,6 +385,7 @@ impl<R: RedgeContainers> Redge<R> {
             face_data.push(self.face_data.get(face.id.to_index() as u64).clone());
         }
 
+        assert!(face_indices.len() == face_data.len());
         (verts, face_indices, face_data)
     }
 
