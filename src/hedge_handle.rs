@@ -28,6 +28,10 @@ impl<'r, R: RedgeContainers> HedgeHandle<'r, R> {
         )
     }
 
+    pub fn dest(&self) -> VertHandle<'r, R> {
+        self.face_next().source()
+    }
+
     pub fn edge(&self) -> EdgeHandle<'r, R> {
         EdgeHandle::new(self.metadata().edge_id, self.redge)
     }

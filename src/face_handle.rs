@@ -13,7 +13,7 @@ use crate::*;
 
 pub struct FaceHandle<'r, R: RedgeContainers> {
     id: FaceId,
-    redge: &'r Redge<R>,
+    pub(crate) redge: &'r Redge<R>,
 }
 
 impl<'r, R: RedgeContainers> FaceHandle<'r, R> {

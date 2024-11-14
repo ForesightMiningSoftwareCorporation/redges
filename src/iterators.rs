@@ -36,12 +36,12 @@ impl<'r, R: RedgeContainers> Iterator for VertexStarVerticesIter<'r, R> {
 }
 
 pub struct VertexStarEdgesIter<'r, R: RedgeContainers> {
-    start_edge: EdgeId,
-    current_edge: EdgeId,
-    focused_vertex: VertId,
-    start: bool,
+    pub(crate) start_edge: EdgeId,
+    pub(crate) current_edge: EdgeId,
+    pub(crate) focused_vertex: VertId,
+    pub(crate) start: bool,
 
-    redge: &'r Redge<R>,
+    pub(crate) redge: &'r Redge<R>,
 }
 
 impl<'r, R: RedgeContainers> VertexStarEdgesIter<'r, R> {

@@ -468,7 +468,7 @@ where
         };
         match point_set.nearest_neighbor(&test_point) {
             Some(tree_point) => {
-                if (tree_point.point.clone() - point_to_insert.clone()).norm_squared() <= epsilon {
+                if (tree_point.point.clone() - point_to_insert.clone()).norm() <= epsilon {
                     return GeometryCorrectness::DuplicatePoints(tree_point.id, test_point.id);
                 } else {
                     point_set.insert(test_point);

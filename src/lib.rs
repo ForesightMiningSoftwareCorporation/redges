@@ -13,6 +13,7 @@ pub mod iterators;
 pub mod mesh_deleter;
 pub mod validation;
 pub mod vert_handle;
+pub mod wedge;
 
 pub use algorithms::quadric_simplification;
 pub mod queue;
