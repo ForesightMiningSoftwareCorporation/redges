@@ -55,6 +55,15 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
         self.vertices().map(|v| v.id())
     }
 
+    #[inline]
+    pub fn vertex_by_handle(&'r self, vid: VertId) -> Option<VertHandle<'r, R>> {
+        if self.hedge().face_loop().any(|h| h.source().id() == vid) {
+            return Some(self.redge.vert_handle(vid));
+        }
+
+        None
+    }
+
     /// Count the number of sides in the face.
     pub fn side_count(&self) -> usize {
         self.hedge().face_loop().count()

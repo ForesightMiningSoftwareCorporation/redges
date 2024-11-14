@@ -171,8 +171,6 @@ where
             continue;
         }
 
-        println!("=======");
-
         let (cost, optimum) = match config.attribute_simplification {
             AttributeSimplification::NoAttributeSimplification => edge_cost(&edge_handle),
             AttributeSimplification::SimplifyAtributes => {
@@ -190,6 +188,10 @@ where
         if collapse_would_flip_normal(&edge_handle, &optimum) {
             continue;
         }
+
+        if dbg == 2 {
+            println!("=========================")
+        };
 
         debug_assert!(cost >= S::from(0.).unwrap());
         worst_cost = Float::max(worst_cost, cost);
@@ -225,13 +227,13 @@ where
                 let (_, optimum, wedges_to_merge, wedge_order) =
                     edge_cost_with_wedges_final(&edge_handle, &wedges_new);
 
-                // let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
-                // tmp_export_to_obj::<_, _, R>(
-                //     &vs,
-                //     &fs_data,
-                //     format!("before_step_{}.obj", dbg).as_str(),
-                // )
-                // .unwrap();
+                let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
+                tmp_export_to_obj::<_, _, R>(
+                    &vs,
+                    &fs_data,
+                    format!("before_step_{}.obj", dbg).as_str(),
+                )
+                .unwrap();
 
                 let edge_handle = deleter.mesh.edge_handle(eid);
                 wedges_new.collapse_wedge(&optimum, &edge_handle, &wedges_to_merge, &wedge_order);
@@ -252,58 +254,79 @@ where
                 deleter.mesh().vert_data(vid)[1] = optimum[1];
                 deleter.mesh().vert_data(vid)[2] = optimum[2];
 
-                // let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
-                // tmp_export_to_obj::<_, _, R>(
-                //     &vs,
-                //     &fs_data,
-                //     format!("after_step_{}.obj", dbg).as_str(),
-                // )
-                // .unwrap();
+                if dbg == 2 {
+                    let wid = wedges_new.vertex_wedges(&deleter.mesh().vert_handle(vid));
+                    let vals: Vec<_> = wid
+                        .iter()
+                        .map(|id| wedges_new.wedges[*id].clone())
+                        .collect();
+                    println!("wid/values {:?} {:?}", wid, vals);
+                    let mut face_attributes = Vec::new();
+                    for face in deleter.mesh().vert_handle(vid).incident_faces() {
+                        let inner_index = face.data().inner_index(vid);
+                        let mut uvs = Vec::new();
+                        uvs.push(face.data().attribute(inner_index, 0));
+                        uvs.push(face.data().attribute(inner_index, 1));
 
-                // let mut uvs = Vec::new();
-                // for f in &fs_data {
-                //     for i in 0..3 {
-                //         uvs.push(nalgebra::Vector3::new(
-                //             f.attribute(i, 0),
-                //             f.attribute(i, 1),
-                //             S::from(0.).unwrap(),
-                //         ));
-                //     }
-                // }
-                // let uv_ids: Vec<_> = (0..uvs.len())
-                //     .step_by(3)
-                //     .map(|i| vec![i, i + 1, i + 2])
-                //     .collect();
-                // ObjData::export(&(&uvs, &uv_ids), format!("uv_map_{}.obj", dbg).as_str());
-                // ObjData::export(
-                //     &vec![deleter.mesh.vert_handle(vid).data().clone()],
-                //     format!("point_after_{}.obj", dbg).as_str(),
-                // );
+                        face_attributes.push(uvs);
+                    }
 
-                // // === dbg
-                // let epsilon = 0.0000001;
-                // let state = validate_geometry_state(&deleter.mesh, S::from(epsilon).unwrap());
-                // match state {
-                //     GeometryCorrectness::DuplicatePoints(v1, v2) => {
-                //         let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
-                //         tmp_export_to_obj::<_, _, R>(
-                //             &vs,
-                //             &fs_data,
-                //             format!("very_broken_{}.obj", dbg).as_str(),
-                //         )
-                //         .unwrap();
-                //         ObjData::export(
-                //             &vec![
-                //                 deleter.mesh.vert_handle(v1).data().clone(),
-                //                 deleter.mesh.vert_handle(v2).data().clone(),
-                //             ],
-                //             "points.obj",
-                //         );
-                //     }
-                //     _ => {}
-                // }
-                // assert!(state == GeometryCorrectness::Correct, "{:?}", state);
-                // // === dbg
+                    println!("{:?}", face_attributes);
+                }
+
+                let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
+                tmp_export_to_obj::<_, _, R>(
+                    &vs,
+                    &fs_data,
+                    format!("after_step_{}.obj", dbg).as_str(),
+                )
+                .unwrap();
+
+                let mut uvs = Vec::new();
+                for f in &fs_data {
+                    for i in 0..3 {
+                        uvs.push(nalgebra::Vector3::new(
+                            f.attribute(i, 0),
+                            f.attribute(i, 1),
+                            S::from(0.).unwrap(),
+                        ));
+                    }
+                }
+                let uv_ids: Vec<_> = (0..uvs.len())
+                    .step_by(3)
+                    .map(|i| vec![i, i + 1, i + 2])
+                    .collect();
+                ObjData::export(&(&uvs, &uv_ids), format!("uv_map_{}.obj", dbg).as_str());
+                ObjData::export(
+                    &vec![deleter.mesh.vert_handle(vid).data().clone()],
+                    format!("point_after_{}.obj", dbg).as_str(),
+                );
+
+                // === dbg
+                let epsilon = 0.0000001;
+                let state = validate_geometry_state(&deleter.mesh, S::from(epsilon).unwrap());
+                match state {
+                    GeometryCorrectness::DuplicatePoints(v1, v2) => {
+                        let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
+                        tmp_export_to_obj::<_, _, R>(
+                            &vs,
+                            &fs_data,
+                            format!("very_broken_{}.obj", dbg).as_str(),
+                        )
+                        .unwrap();
+                        ObjData::export(
+                            &vec![
+                                deleter.mesh.vert_handle(v1).data().clone(),
+                                deleter.mesh.vert_handle(v2).data().clone(),
+                            ],
+                            "points.obj",
+                        );
+                    }
+                    _ => {}
+                }
+                assert!(state == GeometryCorrectness::Correct, "{:?}", state);
+
+                // === dbg
 
                 let faces: Vec<_> = deleter
                     .mesh()
@@ -331,8 +354,6 @@ where
                 vid
             }
         };
-
-        debug_assert!(correctness_state(&deleter.mesh) == RedgeCorrectness::Correct);
 
         let vn = deleter.mesh.vert_handle(vid);
         for e in vn.star_edges().chain(vn.link_edges()) {
@@ -617,10 +638,11 @@ where
                 res[i] = s[i - 3];
             }
 
-            println!("q:\n{:.3}", q);
-            println!("sub q:\n{}", q_left_low);
-            println!("sub b:\n{}", b_low);
-            println!("result:\n{}", res);
+            // // dbg
+            // println!("q:\n{:.3}", q);
+            // println!("sub q:\n{}", q_left_low);
+            // println!("sub b:\n{}", b_low);
+            // println!("result:\n{}", res);
 
             (
                 res,
