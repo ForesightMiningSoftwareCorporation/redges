@@ -137,12 +137,13 @@ where
 
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
-    let mut dbg = 0;
     let mut worst_cost = <S as Float>::min_value();
-    println!("+++ start simplifying +++");
+    let mut dbg = 0;
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
         dbg += 1;
-
+        if dbg % 100 == 0 {
+            println!("Iteration {}", dbg);
+        }
         let (_cost, id) = queue.pop().unwrap();
         let eid = EdgeId(id as usize);
 
@@ -189,10 +190,6 @@ where
             continue;
         }
 
-        if dbg == 2 {
-            println!("=========================")
-        };
-
         debug_assert!(cost >= S::from(0.).unwrap());
         worst_cost = Float::max(worst_cost, cost);
 
@@ -227,14 +224,6 @@ where
                 let (_, optimum, wedges_to_merge, wedge_order) =
                     edge_cost_with_wedges_final(&edge_handle, &wedges_new);
 
-                let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
-                tmp_export_to_obj::<_, _, R>(
-                    &vs,
-                    &fs_data,
-                    format!("before_step_{}.obj", dbg).as_str(),
-                )
-                .unwrap();
-
                 let edge_handle = deleter.mesh.edge_handle(eid);
                 wedges_new.collapse_wedge(&optimum, &edge_handle, &wedges_to_merge, &wedge_order);
                 let v1 = edge_handle.v1().id();
@@ -253,80 +242,6 @@ where
                 deleter.mesh().vert_data(vid)[0] = optimum[0];
                 deleter.mesh().vert_data(vid)[1] = optimum[1];
                 deleter.mesh().vert_data(vid)[2] = optimum[2];
-
-                if dbg == 2 {
-                    let wid = wedges_new.vertex_wedges(&deleter.mesh().vert_handle(vid));
-                    let vals: Vec<_> = wid
-                        .iter()
-                        .map(|id| wedges_new.wedges[*id].clone())
-                        .collect();
-                    println!("wid/values {:?} {:?}", wid, vals);
-                    let mut face_attributes = Vec::new();
-                    for face in deleter.mesh().vert_handle(vid).incident_faces() {
-                        let inner_index = face.data().inner_index(vid);
-                        let mut uvs = Vec::new();
-                        uvs.push(face.data().attribute(inner_index, 0));
-                        uvs.push(face.data().attribute(inner_index, 1));
-
-                        face_attributes.push(uvs);
-                    }
-
-                    println!("{:?}", face_attributes);
-                }
-
-                let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
-                tmp_export_to_obj::<_, _, R>(
-                    &vs,
-                    &fs_data,
-                    format!("after_step_{}.obj", dbg).as_str(),
-                )
-                .unwrap();
-
-                let mut uvs = Vec::new();
-                for f in &fs_data {
-                    for i in 0..3 {
-                        uvs.push(nalgebra::Vector3::new(
-                            f.attribute(i, 0),
-                            f.attribute(i, 1),
-                            S::from(0.).unwrap(),
-                        ));
-                    }
-                }
-                let uv_ids: Vec<_> = (0..uvs.len())
-                    .step_by(3)
-                    .map(|i| vec![i, i + 1, i + 2])
-                    .collect();
-                ObjData::export(&(&uvs, &uv_ids), format!("uv_map_{}.obj", dbg).as_str());
-                ObjData::export(
-                    &vec![deleter.mesh.vert_handle(vid).data().clone()],
-                    format!("point_after_{}.obj", dbg).as_str(),
-                );
-
-                // === dbg
-                let epsilon = 0.0000001;
-                let state = validate_geometry_state(&deleter.mesh, S::from(epsilon).unwrap());
-                match state {
-                    GeometryCorrectness::DuplicatePoints(v1, v2) => {
-                        let (vs, _fs, fs_data) = deleter.mesh.to_face_list();
-                        tmp_export_to_obj::<_, _, R>(
-                            &vs,
-                            &fs_data,
-                            format!("very_broken_{}.obj", dbg).as_str(),
-                        )
-                        .unwrap();
-                        ObjData::export(
-                            &vec![
-                                deleter.mesh.vert_handle(v1).data().clone(),
-                                deleter.mesh.vert_handle(v2).data().clone(),
-                            ],
-                            "points.obj",
-                        );
-                    }
-                    _ => {}
-                }
-                assert!(state == GeometryCorrectness::Correct, "{:?}", state);
-
-                // === dbg
 
                 let faces: Vec<_> = deleter
                     .mesh()
@@ -588,9 +503,6 @@ where
     let (q, b, d, wedges_to_merge, wedge_order) = wedges.wedge_quadric(edge);
 
     let solve = || {
-        // dbg
-        return None;
-
         let det = q.determinant();
         // Safety check to prevent numerical problems when solving the system.
         if Float::abs(det) < S::from(f64::EPSILON).unwrap() {
@@ -638,12 +550,6 @@ where
                 res[i] = s[i - 3];
             }
 
-            // // dbg
-            // println!("q:\n{:.3}", q);
-            // println!("sub q:\n{}", q_left_low);
-            // println!("sub b:\n{}", b_low);
-            // println!("result:\n{}", res);
-
             (
                 res,
                 S::from((total_wedges as f32 + is_boundary as u8 as f32) * EDGE_WEIGHT_PENALTY)
@@ -652,7 +558,6 @@ where
         }
     };
 
-    assert!(cost > S::from(0.).unwrap());
     assert!(cost.is_finite());
     (cost, optimal, wedges_to_merge, wedge_order)
 }
