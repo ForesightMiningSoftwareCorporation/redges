@@ -138,12 +138,8 @@ where
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
     let mut worst_cost = <S as Float>::min_value();
-    let mut dbg = 0;
+
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
-        dbg += 1;
-        if dbg % 100 == 0 {
-            println!("Iteration {}", dbg);
-        }
         let (_cost, id) = queue.pop().unwrap();
         let eid = EdgeId(id as usize);
 
