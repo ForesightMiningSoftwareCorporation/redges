@@ -1,4 +1,5 @@
 use core::f32;
+use core::hash::Hash;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     ops::Mul,
@@ -18,7 +19,7 @@ use crate::{
     },
     vert_handle::VertHandle,
     wavefront_loader::ObjData,
-    wedge::WedgeDS,
+    wedge::{self, WedgeDS},
     EdgeId, FaceId, VertId,
 };
 use linear_isomorphic::prelude::*;
@@ -130,17 +131,24 @@ where
         *mesh.vert_data.get_mut(i as u64) = pos * scale;
     }
 
-    let mut wedges_new = construct_wedges(&mesh);
+    let mut wedges = construct_wedges(&mesh);
 
     // Start the queue with each edge's cost.
-    let mut queue = initialize_queue::<S, R>(&mesh, &config, &wedges_new);
+    let mut queue = initialize_queue::<S, R>(&mesh, &wedges);
 
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
     let mut worst_cost = <S as Float>::min_value();
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
-        let (_cost, id) = queue.pop().unwrap();
-        let eid = EdgeId(id as usize);
+        let (
+            cost,
+            QueueEdgeData {
+                id: eid,
+                attributes: optimum,
+                wedges_to_merge,
+                wedge_order,
+            },
+        ) = queue.pop().unwrap();
 
         let edge_handle = deleter.mesh().edge_handle(eid);
 
@@ -162,21 +170,12 @@ where
             continue;
         }
 
-        let (cost, optimum) = match config.attribute_simplification {
-            AttributeSimplification::NoAttributeSimplification => edge_cost(&edge_handle),
-            AttributeSimplification::SimplifyAtributes => {
-                let (cost, optimum, _, _) = edge_cost_with_wedges_final(&edge_handle, &wedges_new);
+        let mut geom_optimum = VertData::<R>::default();
+        geom_optimum[0] = optimum[0];
+        geom_optimum[1] = optimum[1];
+        geom_optimum[2] = optimum[2];
 
-                let mut geom_optimum = VertData::<R>::default();
-                geom_optimum[0] = optimum[0];
-                geom_optimum[1] = optimum[1];
-                geom_optimum[2] = optimum[2];
-
-                (cost, geom_optimum)
-            }
-        };
-
-        if collapse_would_flip_normal(&edge_handle, &optimum) {
+        if collapse_would_flip_normal(&edge_handle, &geom_optimum) {
             continue;
         }
 
@@ -192,94 +191,84 @@ where
             .chain(edge_handle.v2().star_edges())
             .chain(edge_handle.v2().link_edges())
         {
-            queue.remove(e.id().to_index() as u32);
+            queue.remove(QueueEdgeData {
+                id: e.id(),
+                attributes: DVector::default(),
+                wedge_order: Vec::new(),
+                wedges_to_merge: Vec::new(),
+            });
         }
 
         let edge_handle = deleter.mesh().edge_handle(eid);
 
         // Compute the edge collapse and update the new position (and attributes if needed).
-        let vid = match config.attribute_simplification {
-            AttributeSimplification::NoAttributeSimplification => {
-                let (_, optimum) = edge_cost(&edge_handle);
-                let vid = deleter.collapse_edge(eid);
 
-                // Update the position of the collapsed vertex to that wich minimizes the
-                // quadric error.
-                *deleter.mesh().vert_data(vid) = optimum;
+        // // TODO: redundant, use the values from above.
+        // let (_, optimum, wedges_to_merge, wedge_order) =
+        //     edge_cost_with_wedges_final(&edge_handle, &wedges);
 
-                vid
-            }
-            AttributeSimplification::SimplifyAtributes => {
-                // TODO: redundant, use the values from above.
-                let (_, optimum, wedges_to_merge, wedge_order) =
-                    edge_cost_with_wedges_final(&edge_handle, &wedges_new);
-
-                let edge_handle = deleter.mesh.edge_handle(eid);
-                wedges_new.collapse_wedge(&optimum, &edge_handle, &wedges_to_merge, &wedge_order);
-                let v1 = edge_handle.v1().id();
-                let v2 = edge_handle.v2().id();
-                let vid = deleter.collapse_edge(eid);
-                let deleted = if vid == v1 {
-                    v2
-                } else if vid == v2 {
-                    v1
-                } else {
-                    unreachable!("Somehow the new vertex after an edge collapse is not one of the original edge vertices.")
-                };
-                deleter.update_face_corners(vid);
-                sync_wedge_and_redge(vid, deleted, &mut wedges_new, &mut deleter);
-
-                deleter.mesh().vert_data(vid)[0] = optimum[0];
-                deleter.mesh().vert_data(vid)[1] = optimum[1];
-                deleter.mesh().vert_data(vid)[2] = optimum[2];
-
-                let faces: Vec<_> = deleter
-                    .mesh()
-                    .vert_handle(vid)
-                    .incident_faces()
-                    .map(|f| f.id())
-                    .collect();
-
-                // We just changed the face connectivity by an edge collapse, so
-                // we must update the vertex indices of the relevant faces.
-                for fid in &faces {
-                    let data = deleter.mesh.face_data.get_mut(fid.to_index() as u64);
-                    let vids = data.attribute_vertices_mut().to_vec();
-
-                    let face = deleter.mesh.face_handle(*fid);
-                    let updated: Vec<_> =
-                        face.hedge().face_loop().map(|h| h.source().id()).collect();
-                    // If we find a mismatched vertex index, we need to update the face.
-                    if let Some(mismatched) = vids.iter().position(|id| !updated.contains(&id)) {
-                        let data = deleter.mesh.face_data.get_mut(fid.to_index() as u64);
-                        data.attribute_vertices_mut()[mismatched] = vid;
-                    }
-                }
-
-                vid
-            }
+        let edge_handle = deleter.mesh.edge_handle(eid);
+        wedges.collapse_wedge(&optimum, &edge_handle, &wedges_to_merge, &wedge_order);
+        let v1 = edge_handle.v1().id();
+        let v2 = edge_handle.v2().id();
+        let vid = deleter.collapse_edge(eid);
+        let deleted = if vid == v1 {
+            v2
+        } else if vid == v2 {
+            v1
+        } else {
+            unreachable!("Somehow the new vertex after an edge collapse is not one of the original edge vertices.")
         };
+        deleter.update_face_corners(vid);
+        sync_wedge_and_redge(vid, deleted, &mut wedges, &mut deleter);
+
+        deleter.mesh().vert_data(vid)[0] = optimum[0];
+        deleter.mesh().vert_data(vid)[1] = optimum[1];
+        deleter.mesh().vert_data(vid)[2] = optimum[2];
+
+        let faces: Vec<_> = deleter
+            .mesh()
+            .vert_handle(vid)
+            .incident_faces()
+            .map(|f| f.id())
+            .collect();
+
+        // We just changed the face connectivity by an edge collapse, so
+        // we must update the vertex indices of the relevant faces.
+        for fid in &faces {
+            let data = deleter.mesh.face_data.get_mut(fid.to_index() as u64);
+            let vids = data.attribute_vertices_mut().to_vec();
+
+            let face = deleter.mesh.face_handle(*fid);
+            let updated: Vec<_> = face.hedge().face_loop().map(|h| h.source().id()).collect();
+            // If we find a mismatched vertex index, we need to update the face.
+            if let Some(mismatched) = vids.iter().position(|id| !updated.contains(&id)) {
+                let data = deleter.mesh.face_data.get_mut(fid.to_index() as u64);
+                data.attribute_vertices_mut()[mismatched] = vid;
+            }
+        }
 
         let vn = deleter.mesh.vert_handle(vid);
         for e in vn.star_edges().chain(vn.link_edges()) {
             debug_assert!(e.is_active());
-            let mut cost = match config.attribute_simplification {
-                AttributeSimplification::NoAttributeSimplification => {
-                    let (cost, _) = edge_cost(&e);
-                    cost
-                }
-                AttributeSimplification::SimplifyAtributes => {
-                    let (cost, _, _, _) = edge_cost_with_wedges_final(&e, &wedges_new);
-                    cost
-                }
-            };
+
+            let (mut cost, optimum, wedges_to_merge, wedge_order) =
+                edge_cost_with_wedges_final(&e, &wedges);
 
             let [v1, v2] = e.vertex_ids();
             if locked_vertex(v1, &deleter.mesh) || locked_vertex(v2, &deleter.mesh) {
                 cost += S::from(EDGE_WEIGHT_PENALTY).unwrap();
             }
 
-            queue.push(cost, e.id().to_index() as u32);
+            queue.push(
+                cost,
+                QueueEdgeData {
+                    id: e.id(),
+                    attributes: optimum,
+                    wedges_to_merge,
+                    wedge_order,
+                },
+            );
         }
     }
 
@@ -380,12 +369,32 @@ fn sync_wedge_and_redge<R: RedgeContainers, S: RealField>(
     }
 }
 
+struct QueueEdgeData<S> {
+    id: EdgeId,
+    attributes: DVector<S>,
+    /// The wedges that must be merged after an edge collapse.
+    wedges_to_merge: Vec<(usize, usize)>,
+    /// The order in which the wedge attributes appear in the `attributes` vector.
+    /// Needed when reconstructing face attribute values from a wedge.
+    wedge_order: Vec<usize>,
+}
+
+impl<S> PartialEq for QueueEdgeData<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<S> Eq for QueueEdgeData<S> {}
+
+impl<S> Hash for QueueEdgeData<S> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 /// For each vertex, compute the quadrics of its incident faces.
-fn initialize_queue<S, R>(
-    mesh: &Redge<R>,
-    config: &QuadricSimplificationConfig,
-    wedges: &WedgeDS<S>,
-) -> PQueue<u32, S>
+fn initialize_queue<S, R>(mesh: &Redge<R>, wedges: &WedgeDS<S>) -> PQueue<QueueEdgeData<S>, S>
 where
     R: RedgeContainers,
     S: FloatCore
@@ -398,16 +407,17 @@ where
 {
     let mut queue = PQueue::with_capacity(mesh.edge_count());
     for edge in mesh.meta_edges() {
-        match config.attribute_simplification {
-            AttributeSimplification::NoAttributeSimplification => {
-                let (cost, _optimum) = edge_cost(&edge);
-                queue.push(cost, edge.id().to_index() as u32);
-            }
-            AttributeSimplification::SimplifyAtributes => {
-                let (cost, _optimum, _, _) = edge_cost_with_wedges_final(&edge, &wedges);
-                queue.push(cost, edge.id().to_index() as u32);
-            }
-        }
+        let (cost, optimum, wedges_to_merge, wedge_order) =
+            edge_cost_with_wedges_final(&edge, &wedges);
+        queue.push(
+            cost,
+            QueueEdgeData {
+                id: edge.id(),
+                attributes: optimum,
+                wedges_to_merge,
+                wedge_order,
+            },
+        );
     }
 
     queue
