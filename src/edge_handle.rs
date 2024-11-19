@@ -106,11 +106,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         let set1: Vec<VertId> = v1.neighbours().map(|v| v.id()).collect();
         let count = v2.neighbours().filter(|v| set1.contains(&v.id())).count();
 
-        if count != 2 {
-            return false;
-        }
-
-        if count != 2 {
+        if count > 2 {
             return false;
         }
 

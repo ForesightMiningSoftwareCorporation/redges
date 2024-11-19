@@ -22,7 +22,7 @@ use crate::{
     EdgeId, FaceId, VertId,
 };
 use linear_isomorphic::prelude::*;
-use nalgebra::{ComplexField, DMatrix, DVector, Vector4};
+use nalgebra::{constraint, ComplexField, DMatrix, DVector, Vector3, Vector4};
 use num::{traits::float::FloatCore, Bounded, Float, Signed};
 use num_traits::float::TotalOrder;
 
@@ -160,11 +160,6 @@ where
         // Skip bad edges.
         let edge_handle = deleter.mesh().edge_handle(eid);
         if !edge_handle.can_collapse() {
-            continue;
-        }
-
-        // We will deal with the boundaries later.
-        if edge_handle.is_boundary() {
             continue;
         }
 
@@ -321,6 +316,35 @@ where
     (res, worst_cost)
 }
 
+fn face_area_after<'r, R: RedgeContainers, S: RealField>(
+    face: &FaceHandle<'r, R>,
+    vert_id: VertId,
+    p: &Vector3<S>,
+) -> S
+where
+    VertData<R>: InnerSpace<S>,
+    S: nalgebra::ComplexField,
+{
+    let mut verts = Vec::new();
+    for vert in face.vertices() {
+        let id = vert.id();
+        let pos = if id == vert_id {
+            p.clone()
+        } else {
+            let d = vert.data().clone();
+            Vector3::new(d[0], d[1], d[2])
+        };
+
+        verts.push(pos);
+    }
+
+    let d1 = verts[1] - verts[0];
+    let d2 = verts[2] - verts[0];
+
+    let area = S::from_real(d1.cross(&d2).norm());
+    area
+}
+
 fn sync_wedge_and_redge<R: RedgeContainers, S: RealField>(
     vid: VertId,
     deleted: VertId,
@@ -416,6 +440,7 @@ where
             (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap(),
         );
     }
+
     // If the edge does not have a hedge, it's an isolated one, we REALLY should be collapsing this one.
     if !edge.has_hedge() {
         return (S::from(S::min_value()).unwrap(), edge.v1().data().clone());
@@ -424,13 +449,13 @@ where
     // not move the boundary.
     if edge.v1().is_in_boundary() && !edge.v2().is_in_boundary() {
         return (
-            S::from(EDGE_WEIGHT_PENALTY * EDGE_WEIGHT_PENALTY).unwrap(),
+            S::from(EDGE_WEIGHT_PENALTY).unwrap(),
             edge.v1().data().clone(),
         );
     }
     if edge.v2().is_in_boundary() && !edge.v1().is_in_boundary() {
         return (
-            S::from(EDGE_WEIGHT_PENALTY * EDGE_WEIGHT_PENALTY).unwrap(),
+            S::from(EDGE_WEIGHT_PENALTY).unwrap(),
             edge.v2().data().clone(),
         );
     }
@@ -460,7 +485,8 @@ where
         let border_quadric = Quadric::from_plane(
             edge.v1().data().clone(),
             constraint_normal.normalized(),
-            S::from(constraint_normal.norm() + S::from(EDGE_WEIGHT_PENALTY).unwrap()).unwrap(),
+            S::from(constraint_normal.norm() + S::from(EDGE_WEIGHT_PENALTY * 100.).unwrap())
+                .unwrap(),
         );
 
         qe += border_quadric;
@@ -496,7 +522,33 @@ where
     VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
     FaceData<R>: FaceAttributeGetter<S>,
 {
-    let (q, b, d, wedges_to_merge, wedge_order) = wedges.wedge_quadric(edge);
+    let (mut q, mut b, mut final_d, wedges_to_merge, wedge_order) = wedges.wedge_quadric(edge);
+
+    let boundary_penalty = S::from(EDGE_WEIGHT_PENALTY * 1_000_000.).unwrap();
+
+    // Add a constraint plane for boundary edges.
+    if edge.is_boundary() {
+        let n = edge.hedge().face().unit_normal();
+        let e_dir = (edge.v2().data().clone() - edge.v1().data().clone()).normalized();
+        let constraint_normal = e_dir.cross(&n);
+
+        let n = nalgebra::Vector3::new(
+            constraint_normal[0],
+            constraint_normal[1],
+            constraint_normal[2],
+        );
+        let nn = n * n.transpose();
+        let p = edge.v1().data().clone();
+        let p = nalgebra::Vector3::new(p[0], p[1], p[2]);
+        let d = -p.dot(&n);
+
+        let mut top_left = q.view_mut((0, 0), (3, 3));
+        let mut top_three = b.rows_mut(0, 3);
+
+        top_left += nn * boundary_penalty;
+        top_three += n * d * boundary_penalty;
+        final_d += d * d * boundary_penalty;
+    }
 
     let solve = || {
         let det = q.determinant();
@@ -504,14 +556,18 @@ where
         if Float::abs(det) < S::from(f64::EPSILON).unwrap() {
             return None;
         }
-        q.clone().lu().solve(&-b.clone())
+        if let Some(system) = q.clone().cholesky() {
+            Some(system.solve(&-b.clone()))
+        } else {
+            None
+        }
     };
 
-    let (optimal, cost) = match solve() {
+    let (optimal, mut cost) = match solve() {
         Some(optimal) => {
             let cost = (optimal.transpose() * &q * &optimal
                 + b.transpose() * &optimal * S::from(2.).unwrap())[0]
-                + d;
+                + final_d;
 
             (optimal, cost)
         }
@@ -548,14 +604,48 @@ where
 
             (
                 res,
-                S::from((total_wedges as f32 + is_boundary as u8 as f32) * EDGE_WEIGHT_PENALTY)
-                    .unwrap(),
+                S::from(
+                    (total_wedges as f32 + is_boundary as u8 as f32 * 10.) * EDGE_WEIGHT_PENALTY,
+                )
+                .unwrap(),
             )
         }
     };
 
+    // See if any of the faces becomes degenerate (i.e. area of 0).
+    let p = Vector3::new(optimal[0], optimal[1], optimal[2]);
+    let f1 = edge.hedge().face().id();
+    let f2 = edge.hedge().radial_next().face().id();
+    for face in edge
+        .v1()
+        .incident_faces()
+        .filter(|f| f.id() != f1 && f.id() != f2)
+    {
+        let post_area = face_area_after(&face, edge.v1().id(), &p);
+        if post_area < S::from(f32::EPSILON * 10.).unwrap() {
+            cost += S::from(EDGE_WEIGHT_PENALTY * EDGE_WEIGHT_PENALTY).unwrap();
+        }
+    }
+    for face in edge
+        .v2()
+        .incident_faces()
+        .filter(|f| f.id() != f1 && f.id() != f2)
+    {
+        let post_area = face_area_after(&face, edge.v2().id(), &p);
+        if post_area < S::from(f32::EPSILON * 10.).unwrap() {
+            cost += S::from(EDGE_WEIGHT_PENALTY * EDGE_WEIGHT_PENALTY).unwrap();
+        }
+    }
+
     assert!(cost.is_finite());
-    (cost, optimal, wedges_to_merge, wedge_order)
+    let boundary_test =
+        edge.is_boundary() || edge.v1().is_in_boundary() || edge.v2().is_in_boundary();
+    (
+        cost + S::from(boundary_test as u8 as f32).unwrap() * boundary_penalty,
+        optimal,
+        wedges_to_merge,
+        wedge_order,
+    )
 }
 
 /// Test if an edge collapse would flip the direction of a face normal.
@@ -673,6 +763,7 @@ mod tests {
                 attribute_simplification: AttributeSimplification::NoAttributeSimplification,
                 target_face_count: 0,
             },
+            |_, _| false,
         );
 
         let (vs, fs) = redge.to_face_list();
@@ -709,6 +800,7 @@ mod tests {
                 attribute_simplification: AttributeSimplification::NoAttributeSimplification,
                 target_face_count: 0,
             },
+            |_, _| false,
         );
         let duration = start.elapsed();
         println!("Time elapsed in simplification is: {:?}", duration);

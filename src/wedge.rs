@@ -534,8 +534,11 @@ where
         return (b.fixed_rows::<3>(0).into(), S::from(0.0).unwrap());
     }
 
-    let decomp = mat.lu();
-    let res = decomp.solve(&b).unwrap();
+    let inv = mat.try_inverse().unwrap();
+    let res = inv * b;
+
+    // let decomp = mat.lu();
+    // let res = decomp.solve(&b).unwrap();
 
     (res.fixed_rows::<3>(0).into(), res[3])
 }
