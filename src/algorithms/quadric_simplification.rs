@@ -138,7 +138,6 @@ where
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
     let mut worst_cost = <S as Float>::min_value();
-
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
         let (_cost, id) = queue.pop().unwrap();
         let eid = EdgeId(id as usize);
@@ -524,36 +523,58 @@ where
 {
     let (mut q, mut b, mut final_d, wedges_to_merge, wedge_order) = wedges.wedge_quadric(edge);
 
-    let boundary_penalty = S::from(EDGE_WEIGHT_PENALTY * 1_000_000.).unwrap();
+    let boundary_penalty = S::from(EDGE_WEIGHT_PENALTY).unwrap();
 
-    // Add a constraint plane for boundary edges.
+    // Add a constraint planes for boundary edges.
     if edge.is_boundary() {
-        let n = edge.hedge().face().unit_normal();
-        let e_dir = (edge.v2().data().clone() - edge.v1().data().clone()).normalized();
-        let constraint_normal = e_dir.cross(&n);
+        let mut add_phantom_plane = |e: &EdgeHandle<'r, R>| {
+            let n = e.hedge().face().unit_normal();
+            let e_dir = (e.v2().data().clone() - e.v1().data().clone()).normalized();
+            let constraint_normal = e_dir.cross(&n);
 
-        let n = nalgebra::Vector3::new(
-            constraint_normal[0],
-            constraint_normal[1],
-            constraint_normal[2],
-        );
-        let nn = n * n.transpose();
-        let p = edge.v1().data().clone();
-        let p = nalgebra::Vector3::new(p[0], p[1], p[2]);
-        let d = -p.dot(&n);
+            let n = nalgebra::Vector3::new(
+                constraint_normal[0],
+                constraint_normal[1],
+                constraint_normal[2],
+            );
+            let nn = n * n.transpose();
+            let p = e.v1().data().clone();
+            let p = nalgebra::Vector3::new(p[0], p[1], p[2]);
+            let d = -p.dot(&n);
 
-        let mut top_left = q.view_mut((0, 0), (3, 3));
-        let mut top_three = b.rows_mut(0, 3);
+            let mut top_left = q.view_mut((0, 0), (3, 3));
+            let mut top_three = b.rows_mut(0, 3);
 
-        top_left += nn * boundary_penalty;
-        top_three += n * d * boundary_penalty;
-        final_d += d * d * boundary_penalty;
+            top_left += nn;
+            top_three += n * d;
+            final_d += d * d;
+        };
+
+        // For each boundary edge that touches our active edge, we want
+        // the final point to approximate the original boundary conditions as much as possible.
+        // So add a phantom plane for each such edge, to nudge the final
+        // edge position towards the boundary.
+        let boundary_set: BTreeSet<_> = edge
+            .v1()
+            .star_edges()
+            .chain(edge.v2().star_edges())
+            .filter(|e| e.is_boundary())
+            .map(|e| e.id())
+            .collect();
+        for eid in boundary_set {
+            add_phantom_plane(&edge.redge.edge_handle(eid));
+        }
     }
+
+    // When the edge is touching the boundary but it is not in it, we must be careful to
+    // not move the boundary.
+    let v1_is_fixed = edge.v1().is_in_boundary() && !edge.v2().is_in_boundary();
+    let v2_is_fixed = edge.v2().is_in_boundary() && !edge.v1().is_in_boundary();
 
     let solve = || {
         let det = q.determinant();
         // Safety check to prevent numerical problems when solving the system.
-        if Float::abs(det) < S::from(f64::EPSILON).unwrap() {
+        if Float::abs(det) < S::from(f64::EPSILON * 100.).unwrap() || v1_is_fixed || v2_is_fixed {
             return None;
         }
         if let Some(system) = q.clone().cholesky() {
@@ -573,7 +594,15 @@ where
         }
         // If we could not solve the prior system then we will cheat a little bit and solve an easier one.
         None => {
-            let mid = (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap();
+            let mut target =
+                (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap();
+
+            if v1_is_fixed {
+                target = edge.v1().data().clone();
+            }
+            if v2_is_fixed {
+                target = edge.v2().data().clone();
+            }
             let mut res = DVector::zeros(q.nrows());
 
             let wedges1 = wedges.vertex_wedges(&edge.v1());
@@ -582,11 +611,11 @@ where
             let total_wedges = wedges1.len() + wedges2.len();
             let is_boundary = edge.v1().is_in_boundary() || edge.v2().is_in_boundary();
 
-            res[0] = mid[0];
-            res[1] = mid[1];
-            res[2] = mid[2];
+            res[0] = target[0];
+            res[1] = target[1];
+            res[2] = target[2];
 
-            let p = nalgebra::Vector3::new(mid[0], mid[1], mid[2]);
+            let p = nalgebra::Vector3::new(target[0], target[1], target[2]);
 
             let b_low = b.rows(3, b.nrows() - 3);
             let q_left_low = q.view((3, 0), (q.nrows() - 3, 3));
