@@ -129,7 +129,8 @@ pub trait FaceAttributeGetter<S> {
     fn attribute(&self, vert_index: usize, attribute_id: usize) -> S;
     fn attribute_mut(&mut self, vert_index: usize, attribute_id: usize) -> &mut S;
     fn inner_index(&self, vid: VertId) -> usize;
-    fn attribute_vertices(&mut self) -> &mut [VertId];
+    fn attribute_vertices(&self) -> &[VertId];
+    fn attribute_vertices_mut(&mut self) -> &mut [VertId];
 }
 
 impl<S> FaceAttributeGetter<S> for () {
@@ -145,7 +146,11 @@ impl<S> FaceAttributeGetter<S> for () {
         panic!()
     }
 
-    fn attribute_vertices(&mut self) -> &mut [VertId] {
+    fn attribute_vertices(&self) -> &[VertId] {
+        panic!()
+    }
+
+    fn attribute_vertices_mut(&mut self) -> &mut [VertId] {
         panic!()
     }
 

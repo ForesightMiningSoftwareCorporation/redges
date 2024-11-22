@@ -351,26 +351,29 @@ pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Red
 
     let h1_safe = handle
         .hedge()
-        .radial_neighbours()
+        .radial_loop()
         .find(|h| h.id() != h1)
         .map(|h| h.id())
         .unwrap_or(HedgeId::ABSENT);
     let h2_safe = handle
         .hedge()
         .face_next()
-        .radial_neighbours()
+        .radial_loop()
         .find(|h| h.id() != h2)
         .map(|h| h.id())
         .unwrap_or(HedgeId::ABSENT);
 
+    println!("h1 safe {:?}", h1_safe);
+    println!("h2 safe {:?}", h2_safe);
+
     let h2_radials: Vec<_> = mesh
         .hedge_handle(h2)
-        .radial_neighbours()
+        .radial_loop()
         .map(|h| h.id())
         .filter(|h| *h != h2)
         .collect();
 
-    // Joining first matters, maintain thsi order of operations.
+    // Joining first matters, maintain this order of operations.
     // (It's simpler to remove from a large linked list than to add to a small one).
     if h1_safe != HedgeId::ABSENT && h2_safe != HedgeId::ABSENT {
         join_radial_cycles(h1_safe, h2_safe, mesh);

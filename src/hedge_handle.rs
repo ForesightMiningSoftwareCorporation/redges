@@ -28,6 +28,10 @@ impl<'r, R: RedgeContainers> HedgeHandle<'r, R> {
         )
     }
 
+    pub fn dest(&self) -> VertHandle<'r, R> {
+        self.face_next().source()
+    }
+
     pub fn edge(&self) -> EdgeHandle<'r, R> {
         EdgeHandle::new(self.metadata().edge_id, self.redge)
     }
@@ -65,7 +69,7 @@ impl<'r, R: RedgeContainers> HedgeHandle<'r, R> {
         &self.redge.hedges_meta[self.id.to_index()]
     }
 
-    pub fn radial_neighbours(&'r self) -> RadialHedgeIter<'r, R> {
+    pub fn radial_loop(&'r self) -> RadialHedgeIter<'r, R> {
         RadialHedgeIter::new(self.id(), self.redge)
     }
 
