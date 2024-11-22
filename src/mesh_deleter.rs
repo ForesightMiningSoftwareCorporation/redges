@@ -476,7 +476,7 @@ mod tests {
 
         let redge = deleter.end_deletion();
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
     }
 }

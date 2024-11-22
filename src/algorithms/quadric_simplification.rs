@@ -877,7 +877,7 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let redge = quadric_simplify(
+        let (redge, cost) = quadric_simplify(
             redge,
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Aggressive,
@@ -887,7 +887,7 @@ mod tests {
             |_, _| false,
         );
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/simplified_closed.obj");
     }
 
@@ -914,7 +914,7 @@ mod tests {
         );
 
         let start = Instant::now();
-        let redge = quadric_simplify(
+        let (redge, cost) = quadric_simplify(
             redge,
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Aggressive,
@@ -926,7 +926,7 @@ mod tests {
         let duration = start.elapsed();
         println!("Time elapsed in simplification is: {:?}", duration);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/simplified_flat_donut.obj");
     }
 }
