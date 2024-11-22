@@ -256,7 +256,6 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
 
             let next = mesh.hedges_meta[current.to_index()].radial_next_id;
             if next == HedgeId::ABSENT || !mesh.hedges_meta[next.to_index()].is_active {
-                println!("next broken {:?} from {:?}", next, current);
                 return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::RadialChainIsBroken);
             }
 

@@ -81,6 +81,7 @@ impl<S: RealField> WedgeDS<S> {
         FaceData<R>: FaceAttributeGetter<S>,
         S: ComplexField,
     {
+        println!("{:?}", edge.is_active());
         let f1 = edge.hedge().face();
         let f2 = edge.hedge().radial_next().face();
 

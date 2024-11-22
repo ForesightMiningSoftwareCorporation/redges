@@ -175,6 +175,15 @@ where
             continue;
         }
 
+        // We have selected an edge in an isolated face. SO just delete the entire face and move on.
+        if edge_handle.hedge().radial_loop().count() == 1
+            && edge_handle.hedge().face().is_isolated()
+        {
+            let fid = edge_handle.hedge().face().id();
+            deleter.remove_face(fid);
+            continue;
+        }
+
         // Delete non-manifold edges.
         let edge_handle = deleter.mesh().edge_handle(eid);
         if !edge_handle.has_hedge() {
@@ -217,13 +226,27 @@ where
             });
         }
 
-        if dbg >= 12880 {
+        println!(
+            "is isolated {} {}",
+            edge_handle.hedge().face().is_isolated(),
+            dbg
+        );
+        if dbg >= 13040 {
             println!("\n{}", dbg);
             let v1 = edge_handle.v1().data().clone();
             let v2 = edge_handle.v2().data().clone();
 
             println!("edge_id {:?}", edge_handle.id());
             println!("radial loop {}", edge_handle.hedge().radial_loop().count());
+            println!(
+                "face neighbours {:?}",
+                edge_handle
+                    .hedge()
+                    .radial_next()
+                    .face_loop()
+                    .map(|h| h.radial_loop().count())
+                    .collect::<Vec<_>>()
+            );
             println!("v1 edges {}", edge_handle.v1().star_edges().count());
             println!("v2 edges {}", edge_handle.v2().star_edges().count());
             let v1_ns: BTreeSet<_> = edge_handle.v1().neighbours().map(|v| v.id()).collect();
@@ -288,7 +311,7 @@ where
         let v2 = edge_handle.v2().id();
         let vid = deleter.collapse_edge(eid);
 
-        if dbg >= 12880 {
+        if dbg >= 13000 {
             let state = correctness_state(deleter.mesh());
             assert!(state == RedgeCorrectness::Correct, "{:?}", state);
         }

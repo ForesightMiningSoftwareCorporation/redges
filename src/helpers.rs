@@ -133,7 +133,7 @@ pub(crate) fn join_radial_cycles<R: RedgeContainers>(
     mesh.hedges_meta[t2.to_index()].radial_next_id = head1;
 
     mesh.hedges_meta[t1.to_index()].radial_next_id = head2;
-    mesh.hedges_meta[head2.to_index()].radial_next_id = t1;
+    mesh.hedges_meta[head2.to_index()].radial_prev_id = t1;
 }
 
 pub(crate) fn remove_hedge_from_radial<R: RedgeContainers>(hedge_id: HedgeId, mesh: &mut Redge<R>) {
@@ -363,11 +363,6 @@ pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Red
         .map(|h| h.id())
         .unwrap_or(HedgeId::ABSENT);
 
-    println!("h1 {:?}", h1);
-    println!("h2 {:?}", h2);
-    println!("h1 safe {:?}", h1_safe);
-    println!("h2 safe {:?}", h2_safe);
-
     let h2_radials: Vec<_> = mesh
         .hedge_handle(h2)
         .radial_loop()
@@ -379,19 +374,6 @@ pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Red
     // (It's simpler to remove from a large linked list than to add to a small one).
     if h1_safe != HedgeId::ABSENT && h2_safe != HedgeId::ABSENT {
         join_radial_cycles(h1_safe, h2_safe, mesh);
-    }
-
-    //dbg
-    let mut current = h1_safe;
-    let start = h1_safe;
-    println!("joined loop {:?}", start);
-    loop {
-        let next = mesh.hedges_meta[current.to_index()].radial_next_id;
-        println!("joined loop {:?}", next);
-        if next == start {
-            break;
-        }
-        current = next;
     }
 
     if h1_safe != HedgeId::ABSENT {
