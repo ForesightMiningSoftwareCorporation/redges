@@ -82,7 +82,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
         let s0: BTreeSet<_> = self.vertex_ids().collect();
 
         for h in self.hedge().face_loop() {
-            for hedge in h.radial_neighbours().filter(|o| o.id() != h.id()) {
+            for hedge in h.radial_loop().filter(|o| o.id() != h.id()) {
                 let s1: BTreeSet<_> = hedge.face().vertex_ids().collect();
 
                 let intersect = s0.intersection(&s1);

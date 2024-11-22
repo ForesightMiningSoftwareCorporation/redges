@@ -233,7 +233,7 @@ impl<'r, R: RedgeContainers> Iterator for VertManifoldIncidentFacesIterator<'r, 
 
             if let Some(fid) = edge
                 .hedge()
-                .radial_neighbours()
+                .radial_loop()
                 .map(|h| h.face().id())
                 .find(|f| *f != self.last_face)
             {

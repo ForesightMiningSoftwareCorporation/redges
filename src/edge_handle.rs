@@ -141,7 +141,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
     pub fn is_boundary(&self) -> bool {
         self.redge.edges_meta[self.id.to_index()].hedge_id == HedgeId::ABSENT
-            || self.hedge().radial_neighbours().count() <= 1
+            || self.hedge().radial_loop().count() <= 1
     }
 
     pub fn has_hedge(&self) -> bool {

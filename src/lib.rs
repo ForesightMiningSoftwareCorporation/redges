@@ -328,6 +328,7 @@ impl<R: RedgeContainers> Redge<R> {
     }
 
     pub fn face_handle<'r>(&'r self, id: FaceId) -> FaceHandle<'r, R> {
+        assert!(id != FaceId::ABSENT);
         assert!(id.to_index() < self.faces_meta.len());
         FaceHandle::new(id, self)
     }
@@ -460,7 +461,7 @@ impl<R: RedgeContainers> Redge<R> {
         let vn = self.add_vert(mid);
 
         let handle = self.edge_handle(eid);
-        let hedges_to_split: Vec<_> = handle.hedge().radial_neighbours().map(|h| h.id()).collect();
+        let hedges_to_split: Vec<_> = handle.hedge().radial_loop().map(|h| h.id()).collect();
 
         let [v1, v2] = handle.vertex_ids();
 

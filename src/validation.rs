@@ -76,6 +76,7 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         return RedgeCorrectness::MismatchingArrayLengths;
     }
 
+    // Validate verts.
     for (i, vert) in mesh.verts_meta.iter().enumerate() {
         if !vert.is_active {
             continue;
@@ -100,6 +101,7 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         }
     }
 
+    // Validate edges.
     for (i, edge) in mesh.edges_meta.iter().enumerate() {
         if !edge.is_active {
             continue;
@@ -221,6 +223,7 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         }
     }
 
+    // Validate hedges.
     for (i, hedge) in mesh.hedges_meta.iter().enumerate() {
         if !hedge.is_active {
             continue;
@@ -253,6 +256,7 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
 
             let next = mesh.hedges_meta[current.to_index()].radial_next_id;
             if next == HedgeId::ABSENT || !mesh.hedges_meta[next.to_index()].is_active {
+                println!("next broken {:?} from {:?}", next, current);
                 return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::RadialChainIsBroken);
             }
 
@@ -371,7 +375,7 @@ pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness 
 
         let hedge_handle = mesh.hedge_handle(hedge.id);
 
-        let radial_neighbours: Vec<_> = hedge_handle.radial_neighbours().collect();
+        let radial_neighbours: Vec<_> = hedge_handle.radial_loop().collect();
         if radial_neighbours.len() != 2 && radial_neighbours.len() != 1 {
             return RedgeManifoldness::NonManifoldEdge(i, EdgeManifoldness::BrokenRadialLoop);
         }

@@ -534,11 +534,11 @@ where
         return (b.fixed_rows::<3>(0).into(), S::from(0.0).unwrap());
     }
 
-    let inv = mat.try_inverse().unwrap();
-    let res = inv * b;
-
-    // let decomp = mat.lu();
-    // let res = decomp.solve(&b).unwrap();
-
-    (res.fixed_rows::<3>(0).into(), res[3])
+    if let Some(inv) = mat.try_inverse() {
+        let res = inv * b;
+        return (res.fixed_rows::<3>(0).into(), res[3]);
+    } else {
+        // This is a hack. There are better ways to get a value from an undetermined system, however.
+        return (nalgebra::Vector3::default(), S::from(1.0).unwrap());
+    };
 }

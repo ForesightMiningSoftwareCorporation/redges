@@ -20,7 +20,7 @@ use crate::{
     vert_handle::VertHandle,
     wavefront_loader::ObjData,
     wedge::{self, WedgeDS},
-    EdgeId, FaceId, VertId,
+    EdgeId, FaceId, HedgeId, VertId,
 };
 use linear_isomorphic::prelude::*;
 use nalgebra::{constraint, ComplexField, DMatrix, DVector, Vector3, Vector4};
@@ -29,7 +29,7 @@ use num_traits::float::TotalOrder;
 
 use crate::{container_trait::RedgeContainers, Redge};
 
-const EDGE_WEIGHT_PENALTY: f32 = 100_000.0;
+const EDGE_WEIGHT_PENALTY: f32 = 1_000.0;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SimplificationStrategy {
@@ -121,6 +121,22 @@ where
     FaceData<R>: FaceAttributeGetter<S>,
     L: Fn(VertId, &Redge<R>) -> bool,
 {
+    println!(
+        "radial loop at start {}",
+        mesh.edge_handle(EdgeId(267055))
+            .hedge()
+            .radial_loop()
+            .count()
+    );
+
+    ObjData::export(
+        &vec![
+            mesh.edge_handle(EdgeId(267055)).v1().data().clone(),
+            mesh.edge_handle(EdgeId(267055)).v2().data().clone(),
+        ],
+        "edge_at_start.obj",
+    );
+
     // Re-scale geometry for better numerical performance.
     let surface_area: S = mesh.meta_faces().map(|f| f.area()).sum();
     let mean_area = surface_area / S::from(mesh.face_count() as f64).unwrap();
@@ -139,7 +155,9 @@ where
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
     let mut worst_cost = <S as Float>::min_value();
+    let mut dbg = 0;
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
+        dbg += 1;
         let (
             cost,
             QueueEdgeData {
@@ -199,19 +217,82 @@ where
             });
         }
 
-        let edge_handle = deleter.mesh().edge_handle(eid);
+        if dbg >= 12880 {
+            println!("\n{}", dbg);
+            let v1 = edge_handle.v1().data().clone();
+            let v2 = edge_handle.v2().data().clone();
+
+            println!("edge_id {:?}", edge_handle.id());
+            println!("radial loop {}", edge_handle.hedge().radial_loop().count());
+            println!("v1 edges {}", edge_handle.v1().star_edges().count());
+            println!("v2 edges {}", edge_handle.v2().star_edges().count());
+            let v1_ns: BTreeSet<_> = edge_handle.v1().neighbours().map(|v| v.id()).collect();
+            let v2_ns: BTreeSet<_> = edge_handle.v2().neighbours().map(|v| v.id()).collect();
+            println!("intersection {}", v1_ns.intersection(&v2_ns).count());
+            println!(
+                "faces1 {:?}",
+                edge_handle
+                    .v1()
+                    .incident_faces()
+                    .map(|f| f.id())
+                    .collect::<Vec<_>>()
+            );
+            println!(
+                "faces2 {:?}",
+                edge_handle
+                    .v2()
+                    .incident_faces()
+                    .map(|f| f.id())
+                    .collect::<Vec<_>>()
+            );
+
+            let mut verts = Vec::new();
+            let mut indices = Vec::new();
+            for face in edge_handle
+                .v1()
+                .incident_faces()
+                .chain(edge_handle.v2().incident_faces())
+            {
+                let n = verts.len();
+                indices.push(vec![n, n + 1, n + 2]);
+                for v in face.hedge().face_loop().map(|h| h.source().data().clone()) {
+                    verts.push(v);
+                }
+            }
+
+            let intersection = *v1_ns.intersection(&v2_ns).next().unwrap();
+            let intersection = deleter.mesh().vert_handle(intersection).data().clone();
+            ObjData::export(&vec![intersection], "intersection.obj");
+            ObjData::export(&vec![v1, v2], "last_edge.obj");
+            ObjData::export(&(&verts, &indices), "bad_faces.obj");
+
+            let broken_handle = deleter.mesh().hedge_handle(HedgeId(356376));
+            ObjData::export(
+                &vec![
+                    broken_handle.source().data().clone(),
+                    broken_handle.dest().data().clone(),
+                ],
+                "broken_hedge.obj",
+            );
+
+            let (vs, _, fs) = deleter.mesh().to_face_list();
+            tmp_export_to_obj::<_, _, R>(&vs, &fs, format!("test_{}.obj", dbg).as_str()).unwrap();
+            let state = correctness_state(deleter.mesh());
+            assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+        }
 
         // Compute the edge collapse and update the new position (and attributes if needed).
-
-        // // TODO: redundant, use the values from above.
-        // let (_, optimum, wedges_to_merge, wedge_order) =
-        //     edge_cost_with_wedges_final(&edge_handle, &wedges);
-
         let edge_handle = deleter.mesh.edge_handle(eid);
         wedges.collapse_wedge(&optimum, &edge_handle, &wedges_to_merge, &wedge_order);
         let v1 = edge_handle.v1().id();
         let v2 = edge_handle.v2().id();
         let vid = deleter.collapse_edge(eid);
+
+        if dbg >= 12880 {
+            let state = correctness_state(deleter.mesh());
+            assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+        }
+
         let deleted = if vid == v1 {
             v2
         } else if vid == v2 {
@@ -219,6 +300,7 @@ where
         } else {
             unreachable!("Somehow the new vertex after an edge collapse is not one of the original edge vertices.")
         };
+
         deleter.update_face_corners(vid);
         sync_wedge_and_redge(vid, deleted, &mut wedges, &mut deleter);
 
@@ -702,7 +784,7 @@ where
     adjacent_faces.extend(edge.v2().incident_faces().map(|f| f.id()));
 
     // Remove from the adjacent faces those that will be deleted by the edge collapse.
-    for f in edge.hedge().radial_neighbours().map(|h| h.face().id()) {
+    for f in edge.hedge().radial_loop().map(|h| h.face().id()) {
         adjacent_faces.remove(&f);
     }
 

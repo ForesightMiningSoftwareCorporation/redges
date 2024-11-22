@@ -269,7 +269,7 @@ where
         res += (a_valence as isize - target_val(&edge.v1()) as isize).abs()
             + (b_valence as isize - target_val(&edge.v2()) as isize).abs();
 
-        for hedge in edge.hedge().radial_neighbours() {
+        for hedge in edge.hedge().radial_loop() {
             let valence = hedge.face_prev().source().star_edges().count();
             res += (valence as isize - target_val(&hedge.face_prev().source()) as isize).abs();
         }
