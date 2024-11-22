@@ -1,0 +1,168 @@
+use std::fs::File;
+use std::io::Write;
+
+use redges::container_trait::FaceAttributeGetter;
+use redges::quadric_simplification::{QuadricSimplificationConfig, SimplificationStrategy};
+use redges::VertId;
+use redges::{quadric_simplification, Redge};
+use std::time::Instant;
+
+mod wavefront_loader;
+use crate::wavefront_loader::*;
+
+pub type Vec2 = nalgebra::Vector2<f32>;
+pub type Vec3 = nalgebra::Vector3<f32>;
+
+#[derive(Debug, Default, Clone)]
+pub struct FaceData {
+    pub uvs: [Vec2; 3],
+    pub verts: [VertId; 3],
+}
+
+impl FaceAttributeGetter<f32> for FaceData {
+    fn attribute(&self, vert_index: usize, attribute_id: usize) -> f32 {
+        self.uvs[vert_index][attribute_id]
+    }
+
+    fn attribute_count(&self) -> usize {
+        2
+    }
+
+    fn attribute_mut(&mut self, vert_index: usize, attribute_id: usize) -> &mut f32 {
+        &mut self.uvs[vert_index][attribute_id]
+    }
+
+    fn inner_index(&self, vid: VertId) -> usize {
+        self.verts.iter().position(|id| *id == vid).expect(
+            format!(
+                "Asked for position of vertex {:?} in face {:?}",
+                vid, self.verts
+            )
+            .as_str(),
+        )
+    }
+
+    fn attribute_vertices(&self) -> &[VertId] {
+        &self.verts
+    }
+
+    fn attribute_vertices_mut(&mut self) -> &mut [VertId] {
+        &mut self.verts
+    }
+}
+
+fn export_to_obj(vertices: &[Vec3], faces: &Vec<FaceData>, path: &str) -> std::io::Result<()> {
+    let mut file = File::create(path)?;
+    for v in vertices {
+        writeln!(file, "v {} {} {}", v.x, v.y, v.z,)?;
+    }
+
+    for face in faces {
+        writeln!(file, "vt {} {}", face.uvs[0].x, face.uvs[0].y)?;
+        writeln!(file, "vt {} {}", face.uvs[1].x, face.uvs[1].y)?;
+        writeln!(file, "vt {} {}", face.uvs[2].x, face.uvs[2].y)?;
+    }
+
+    for (i, face) in faces.iter().enumerate() {
+        writeln!(
+            file,
+            "f {}/{} {}/{} {}/{}",
+            face.verts[0].to_index() + 1,
+            i * 3 + 1, // vt
+            face.verts[1].to_index() + 1,
+            i * 3 + 2, // vt
+            face.verts[2].to_index() + 1,
+            i * 3 + 3, // vt
+        )?;
+    }
+
+    Ok(())
+}
+
+fn main() {
+    let obj_data = ObjData::from_disk_file("assets/melodia.obj");
+    assert!(obj_data.uv_face_indices.len() == obj_data.vertex_face_indices.len());
+    let mut faces: Vec<_> = (0..obj_data.vertex_face_indices.len())
+        .map(|i| FaceData {
+            uvs: [
+                obj_data.uvs[obj_data.uv_face_indices[i][0] as usize].clone(),
+                obj_data.uvs[obj_data.uv_face_indices[i][1] as usize].clone(),
+                obj_data.uvs[obj_data.uv_face_indices[i][2] as usize].clone(),
+            ],
+            verts: [
+                VertId(obj_data.vertex_face_indices[i][0] as usize),
+                VertId(obj_data.vertex_face_indices[i][1] as usize),
+                VertId(obj_data.vertex_face_indices[i][2] as usize),
+            ],
+        })
+        .collect();
+    // let mut faces: Vec<_> = indices
+    //     .chunks(3)
+    //     .zip(texcoords.chunks(3))
+    //     .map(|(verts, uvs_indices)| FaceData {
+    //         verts: [
+    //             VertId(verts[0] as usize),
+    //             VertId(verts[1] as usize),
+    //             VertId(verts[2] as usize),
+    //         ],
+    //         uvs: [
+    //             uvs[uvs_indices[0] as usize],
+    //             uvs[uvs_indices[1] as usize],
+    //             uvs[uvs_indices[2] as usize],
+    //         ],
+    //     })
+    //     .collect();
+
+    if faces.is_empty() {
+        for i in 0..obj_data.uv_face_indices.len() {
+            faces.push(FaceData {
+                uvs: [nalgebra::Vector2::default(); 3],
+                verts: [
+                    VertId(obj_data.uv_face_indices[i][0] as usize),
+                    VertId(obj_data.uv_face_indices[i][1] as usize),
+                    VertId(obj_data.uv_face_indices[i][2] as usize),
+                ],
+            });
+        }
+    }
+
+    // dbg ===
+    println!(
+        "Exporting input, verts {}, indices {}, faces {}",
+        obj_data.vertices.len(),
+        obj_data.vertex_face_indices.len(),
+        faces.len()
+    );
+    let redge = Redge::<(_, _, _)>::new(
+        obj_data.vertices.clone(),
+        (),
+        faces,
+        obj_data
+            .vertex_face_indices
+            .iter()
+            .map(|l| l.clone().into_iter().map(|i| i as usize)),
+    );
+    let (vs, ids, fs) = redge.to_face_list();
+    export_to_obj(&vs, &fs, "dbg_uvs_before.obj");
+
+    let face_count_before = redge.face_count();
+    let start = Instant::now();
+    println!("Simplifying");
+    let (redge, _) = quadric_simplification::quadric_simplify(
+        redge,
+        QuadricSimplificationConfig {
+            strategy: SimplificationStrategy::Conservative,
+            attribute_simplification:
+                quadric_simplification::AttributeSimplification::SimplifyAtributes,
+            target_face_count: face_count_before / 20,
+        },
+        |_, _| false,
+    );
+    let duration = start.elapsed();
+    println!("Time elapsed in simplify() is: {:?}", duration);
+
+    let (vs, ids, fs) = redge.to_face_list();
+    export_to_obj(&vs, &fs, "dbg_uvs_after.obj");
+    std::process::exit(0);
+    //===
+}
