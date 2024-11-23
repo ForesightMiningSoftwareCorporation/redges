@@ -121,22 +121,6 @@ where
     FaceData<R>: FaceAttributeGetter<S>,
     L: Fn(VertId, &Redge<R>) -> bool,
 {
-    println!(
-        "radial loop at start {}",
-        mesh.edge_handle(EdgeId(267055))
-            .hedge()
-            .radial_loop()
-            .count()
-    );
-
-    ObjData::export(
-        &vec![
-            mesh.edge_handle(EdgeId(267055)).v1().data().clone(),
-            mesh.edge_handle(EdgeId(267055)).v2().data().clone(),
-        ],
-        "edge_at_start.obj",
-    );
-
     // Re-scale geometry for better numerical performance.
     let surface_area: S = mesh.meta_faces().map(|f| f.area()).sum();
     let mean_area = surface_area / S::from(mesh.face_count() as f64).unwrap();
@@ -175,13 +159,23 @@ where
             continue;
         }
 
-        // We have selected an edge in an isolated face. SO just delete the entire face and move on.
-        if edge_handle.hedge().radial_loop().count() == 1
-            && edge_handle.hedge().face().is_isolated()
-        {
-            let fid = edge_handle.hedge().face().id();
-            deleter.remove_face(fid);
-            continue;
+        // We have selected an edge in an isolated face. So just delete the entire face and move on.
+        if edge_handle.hedge().radial_loop().count() == 1 {
+            if edge_handle.hedge().face().is_isolated() {
+                let fid = edge_handle.hedge().face().id();
+                deleter.remove_face(fid);
+                continue;
+            }
+
+            let total_boundary_edges_in_face = edge_handle
+                .hedge()
+                .face_loop()
+                .fold(0, |acc, h| acc + h.edge().is_boundary() as i32);
+            if total_boundary_edges_in_face <= 2 {
+                let fid = edge_handle.hedge().face().id();
+                deleter.remove_face(fid);
+                continue;
+            }
         }
 
         // Delete non-manifold edges.
@@ -226,12 +220,8 @@ where
             });
         }
 
-        println!(
-            "is isolated {} {}",
-            edge_handle.hedge().face().is_isolated(),
-            dbg
-        );
-        if dbg >= 13040 {
+        println!("{}", dbg);
+        if dbg >= 28_400 {
             println!("\n{}", dbg);
             let v1 = edge_handle.v1().data().clone();
             let v2 = edge_handle.v2().data().clone();
@@ -269,6 +259,12 @@ where
                     .collect::<Vec<_>>()
             );
 
+            println!(
+                "incident boundary edges {:?} {:?}",
+                edge_handle.v1().count_incident_boundary_edges(),
+                edge_handle.v2().count_incident_boundary_edges()
+            );
+
             let mut verts = Vec::new();
             let mut indices = Vec::new();
             for face in edge_handle
@@ -289,15 +285,6 @@ where
             ObjData::export(&vec![v1, v2], "last_edge.obj");
             ObjData::export(&(&verts, &indices), "bad_faces.obj");
 
-            let broken_handle = deleter.mesh().hedge_handle(HedgeId(356376));
-            ObjData::export(
-                &vec![
-                    broken_handle.source().data().clone(),
-                    broken_handle.dest().data().clone(),
-                ],
-                "broken_hedge.obj",
-            );
-
             let (vs, _, fs) = deleter.mesh().to_face_list();
             tmp_export_to_obj::<_, _, R>(&vs, &fs, format!("test_{}.obj", dbg).as_str()).unwrap();
             let state = correctness_state(deleter.mesh());
@@ -311,7 +298,7 @@ where
         let v2 = edge_handle.v2().id();
         let vid = deleter.collapse_edge(eid);
 
-        if dbg >= 13000 {
+        if dbg >= 28_400 {
             let state = correctness_state(deleter.mesh());
             assert!(state == RedgeCorrectness::Correct, "{:?}", state);
         }
@@ -526,105 +513,6 @@ where
     }
 
     queue
-}
-
-fn face_quadric<'r, S, R: RedgeContainers>(face: &FaceHandle<'r, R>) -> Quadric<S, VertData<R>>
-where
-    S: RealField + Mul<VertData<R>, Output = VertData<R>>,
-    VertData<R>: InnerSpace<S>,
-{
-    let points = [
-        face.hedge().source().data().clone(),
-        face.hedge().face_next().source().data().clone(),
-        face.hedge().face_prev().source().data().clone(),
-    ];
-
-    Quadric::from_tri(points[0].clone(), points[1].clone(), points[2].clone())
-}
-
-fn edge_cost<'r, S, R: RedgeContainers>(edge: &EdgeHandle<'r, R>) -> (S, VertData<R>)
-where
-    S: RealField + Mul<VertData<R>, Output = VertData<R>> + TotalOrder,
-    VertData<R>: InnerSpace<S>,
-{
-    // If this topological operation would break the mesh, add a ludicrous cost.
-    if !edge.can_collapse() {
-        return (
-            S::from(EDGE_WEIGHT_PENALTY * 100_000_000.).unwrap(),
-            (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap(),
-        );
-    }
-
-    // If the edge does not have a hedge, it's an isolated one, we REALLY should be collapsing this one.
-    if !edge.has_hedge() {
-        return (S::from(S::min_value()).unwrap(), edge.v1().data().clone());
-    }
-    // When the edge is touching the boundary but it is not in it, we must be careful to
-    // not move the boundary.
-    if edge.v1().is_in_boundary() && !edge.v2().is_in_boundary() {
-        return (
-            S::from(EDGE_WEIGHT_PENALTY).unwrap(),
-            edge.v1().data().clone(),
-        );
-    }
-    if edge.v2().is_in_boundary() && !edge.v1().is_in_boundary() {
-        return (
-            S::from(EDGE_WEIGHT_PENALTY).unwrap(),
-            edge.v2().data().clone(),
-        );
-    }
-
-    let vertex_quadric = |vert: &VertHandle<R>| {
-        let mut quadric = Quadric::default();
-
-        // For each face incident on the vertex, compute its contribution to the vertex' quadric form.
-        for f in vert.incident_faces() {
-            quadric += face_quadric(&f);
-        }
-
-        quadric
-    };
-
-    let q1 = vertex_quadric(&edge.v1());
-    let q2 = vertex_quadric(&edge.v2());
-
-    let mut qe = q1 + q2;
-
-    // Add a constraint plane for boundary edges.
-    if edge.is_boundary() {
-        let n = edge.hedge().face().unit_normal();
-        let e_dir = (edge.v2().data().clone() - edge.v1().data().clone()).normalized();
-        let constraint_normal = e_dir.cross(&n);
-
-        let border_quadric = Quadric::from_plane(
-            edge.v1().data().clone(),
-            constraint_normal.normalized(),
-            S::from(constraint_normal.norm() + S::from(EDGE_WEIGHT_PENALTY * 100.).unwrap())
-                .unwrap(),
-        );
-
-        qe += border_quadric;
-    }
-
-    qe.optimize().unwrap_or_else(|| {
-        let v1 = edge.v1().data().clone();
-        let v2 = edge.v2().data().clone();
-        let mid = (v1.clone() + v2.clone()) * S::from(0.5).unwrap();
-
-        let c1 = qe.error(v1.clone());
-        let c2 = qe.error(v2.clone());
-        let cm = qe.error(mid.clone());
-
-        let candidates = [(c1, v1), (c2, v2), (cm, mid)];
-
-        let best = candidates
-            .iter()
-            .min_by(|(a, _), (b, _)| a.total_cmp(b))
-            .unwrap()
-            .clone();
-
-        best
-    })
 }
 
 fn edge_cost_with_wedges_final<'r, S, R: RedgeContainers>(

@@ -154,7 +154,7 @@ fn main() {
             strategy: SimplificationStrategy::Conservative,
             attribute_simplification:
                 quadric_simplification::AttributeSimplification::SimplifyAtributes,
-            target_face_count: face_count_before / 20,
+            target_face_count: face_count_before / 30,
         },
         |_, _| false,
     );

@@ -85,4 +85,8 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
     pub fn pick_different(&self, eid: EdgeId) -> Option<EdgeHandle<'r, R>> {
         self.star_edges().find(|e| e.id() != eid)
     }
+
+    pub fn count_incident_boundary_edges(&self) -> usize {
+        self.star_edges().filter(|e| e.is_boundary()).count()
+    }
 }
