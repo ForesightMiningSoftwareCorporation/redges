@@ -220,76 +220,76 @@ where
             });
         }
 
-        println!("{}", dbg);
-        if dbg >= 28_400 {
-            println!("\n{}", dbg);
-            let v1 = edge_handle.v1().data().clone();
-            let v2 = edge_handle.v2().data().clone();
+        // println!("{}", dbg);
+        // if dbg >= 4430900 {
+        //     println!("\n{}", dbg);
+        //     let v1 = edge_handle.v1().data().clone();
+        //     let v2 = edge_handle.v2().data().clone();
 
-            println!("edge_id {:?}", edge_handle.id());
-            println!("radial loop {}", edge_handle.hedge().radial_loop().count());
-            println!(
-                "face neighbours {:?}",
-                edge_handle
-                    .hedge()
-                    .radial_next()
-                    .face_loop()
-                    .map(|h| h.radial_loop().count())
-                    .collect::<Vec<_>>()
-            );
-            println!("v1 edges {}", edge_handle.v1().star_edges().count());
-            println!("v2 edges {}", edge_handle.v2().star_edges().count());
-            let v1_ns: BTreeSet<_> = edge_handle.v1().neighbours().map(|v| v.id()).collect();
-            let v2_ns: BTreeSet<_> = edge_handle.v2().neighbours().map(|v| v.id()).collect();
-            println!("intersection {}", v1_ns.intersection(&v2_ns).count());
-            println!(
-                "faces1 {:?}",
-                edge_handle
-                    .v1()
-                    .incident_faces()
-                    .map(|f| f.id())
-                    .collect::<Vec<_>>()
-            );
-            println!(
-                "faces2 {:?}",
-                edge_handle
-                    .v2()
-                    .incident_faces()
-                    .map(|f| f.id())
-                    .collect::<Vec<_>>()
-            );
+        //     println!("edge_id {:?}", edge_handle.id());
+        //     println!("radial loop {}", edge_handle.hedge().radial_loop().count());
+        //     println!(
+        //         "face neighbours {:?}",
+        //         edge_handle
+        //             .hedge()
+        //             .radial_next()
+        //             .face_loop()
+        //             .map(|h| h.radial_loop().count())
+        //             .collect::<Vec<_>>()
+        //     );
+        //     println!("v1 edges {}", edge_handle.v1().star_edges().count());
+        //     println!("v2 edges {}", edge_handle.v2().star_edges().count());
+        //     let v1_ns: BTreeSet<_> = edge_handle.v1().neighbours().map(|v| v.id()).collect();
+        //     let v2_ns: BTreeSet<_> = edge_handle.v2().neighbours().map(|v| v.id()).collect();
+        //     println!("intersection {}", v1_ns.intersection(&v2_ns).count());
+        //     println!(
+        //         "faces1 {:?}",
+        //         edge_handle
+        //             .v1()
+        //             .incident_faces()
+        //             .map(|f| f.id())
+        //             .collect::<Vec<_>>()
+        //     );
+        //     println!(
+        //         "faces2 {:?}",
+        //         edge_handle
+        //             .v2()
+        //             .incident_faces()
+        //             .map(|f| f.id())
+        //             .collect::<Vec<_>>()
+        //     );
 
-            println!(
-                "incident boundary edges {:?} {:?}",
-                edge_handle.v1().count_incident_boundary_edges(),
-                edge_handle.v2().count_incident_boundary_edges()
-            );
+        //     println!(
+        //         "incident boundary edges {:?} {:?}",
+        //         edge_handle.v1().count_incident_boundary_edges(),
+        //         edge_handle.v2().count_incident_boundary_edges()
+        //     );
 
-            let mut verts = Vec::new();
-            let mut indices = Vec::new();
-            for face in edge_handle
-                .v1()
-                .incident_faces()
-                .chain(edge_handle.v2().incident_faces())
-            {
-                let n = verts.len();
-                indices.push(vec![n, n + 1, n + 2]);
-                for v in face.hedge().face_loop().map(|h| h.source().data().clone()) {
-                    verts.push(v);
-                }
-            }
+        //     let mut verts = Vec::new();
+        //     let mut indices = Vec::new();
+        //     for face in edge_handle
+        //         .v1()
+        //         .incident_faces()
+        //         .chain(edge_handle.v2().incident_faces())
+        //     {
+        //         let n = verts.len();
+        //         indices.push(vec![n, n + 1, n + 2]);
+        //         for v in face.hedge().face_loop().map(|h| h.source().data().clone()) {
+        //             verts.push(v);
+        //         }
+        //     }
 
-            let intersection = *v1_ns.intersection(&v2_ns).next().unwrap();
-            let intersection = deleter.mesh().vert_handle(intersection).data().clone();
-            ObjData::export(&vec![intersection], "intersection.obj");
-            ObjData::export(&vec![v1, v2], "last_edge.obj");
-            ObjData::export(&(&verts, &indices), "bad_faces.obj");
+        //     let intersection = *v1_ns.intersection(&v2_ns).next().unwrap();
+        //     let intersection = deleter.mesh().vert_handle(intersection).data().clone();
+        //     ObjData::export(&vec![intersection], "intersection.obj");
+        //     ObjData::export(&vec![v1, v2], "last_edge.obj");
+        //     ObjData::export(&(&verts, &indices), "bad_faces.obj");
 
-            let (vs, _, fs) = deleter.mesh().to_face_list();
-            tmp_export_to_obj::<_, _, R>(&vs, &fs, format!("test_{}.obj", dbg).as_str()).unwrap();
-            let state = correctness_state(deleter.mesh());
-            assert!(state == RedgeCorrectness::Correct, "{:?}", state);
-        }
+        //     let (vs, _, fs) = deleter.mesh().to_face_list();
+        //     tmp_export_to_obj::<_, _, R>(&vs, &fs, format!("test_{}.obj", dbg).as_str()).unwrap();
+        //     let state = correctness_state(deleter.mesh());
+        //     assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+        // }
 
         // Compute the edge collapse and update the new position (and attributes if needed).
         let edge_handle = deleter.mesh.edge_handle(eid);
@@ -298,10 +298,10 @@ where
         let v2 = edge_handle.v2().id();
         let vid = deleter.collapse_edge(eid);
 
-        if dbg >= 28_400 {
-            let state = correctness_state(deleter.mesh());
-            assert!(state == RedgeCorrectness::Correct, "{:?}", state);
-        }
+        // if dbg >= 4430900 {
+        //     let state = correctness_state(deleter.mesh());
+        //     assert!(state == RedgeCorrectness::Correct, "{:?}", state);
+        // }
 
         let deleted = if vid == v1 {
             v2
@@ -565,6 +565,7 @@ where
             .map(|e| e.id())
             .collect();
         for eid in boundary_set {
+            println!("{:?}", eid);
             add_phantom_plane(&edge.redge.edge_handle(eid));
         }
     }

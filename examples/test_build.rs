@@ -80,7 +80,11 @@ fn export_to_obj(vertices: &[Vec3], faces: &Vec<FaceData>, path: &str) -> std::i
 }
 
 fn main() {
-    let obj_data = ObjData::from_disk_file("assets/melodia.obj");
+    let mut obj_data = ObjData::from_disk_file("assets/AEC.obj");
+    if obj_data.uv_face_indices.is_empty() {
+        obj_data.uvs = vec![Vec2::new(0., 0.)];
+        obj_data.uv_face_indices = vec![vec![0; 3]; obj_data.vertex_face_indices.len()];
+    }
     assert!(obj_data.uv_face_indices.len() == obj_data.vertex_face_indices.len());
     let mut faces: Vec<_> = (0..obj_data.vertex_face_indices.len())
         .map(|i| FaceData {
