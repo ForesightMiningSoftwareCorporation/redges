@@ -1,16 +1,13 @@
-use std::{
-    collections::HashMap,
-    ops::{Index, Mul},
-    os::linux::raw::stat,
-    usize,
-};
+use std::{collections::HashMap, ops::Index, usize};
 
 use linear_isomorphic::{ArithmeticType, InnerSpace, RealField};
 use num_traits::float::TotalOrder;
 use ordered_float::FloatCore;
 
 use crate::{
-    container_trait::{PrimitiveContainer, RedgeContainers, VertData},
+    container_trait::{
+        FaceAttributeGetter, FaceData, PrimitiveContainer, RedgeContainers, VertData,
+    },
     edge_handle,
     face_handle::FaceMetrics,
     helpers::{
@@ -251,7 +248,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         let incident_faces: Vec<_> = if edge_handle.has_hedge() {
             edge_handle
                 .hedge()
-                .radial_neighbours()
+                .radial_loop()
                 .map(|h| h.face().id())
                 .collect()
         } else {
@@ -309,11 +306,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
     {
         // Collect all necessary elements before breaking the topology.
         let edge_handle = self.mesh.edge_handle(edge_id);
-        let hedges_to_collapse: Vec<_> = edge_handle
-            .hedge()
-            .radial_neighbours()
-            .map(|f| f.id())
-            .collect();
+        let hedges_to_collapse: Vec<_> =
+            edge_handle.hedge().radial_loop().map(|f| f.id()).collect();
 
         let v1_edges: Vec<_> = edge_handle
             .v1()
@@ -352,7 +346,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
                 .mesh
                 .edge_handle(*eid)
                 .hedge()
-                .radial_neighbours()
+                .radial_loop()
                 .map(|h| h.id())
                 .collect();
 
@@ -371,6 +365,14 @@ impl<R: RedgeContainers> MeshDeleter<R> {
 
         for face in faces {
             if self.mesh.face_handle(face).side_count() == 2 {
+                let hedges = self
+                    .mesh
+                    .face_handle(face)
+                    .hedge()
+                    .face_loop()
+                    .map(|h| h.id())
+                    .collect::<Vec<_>>();
+
                 fix_digon_face(face, &mut self.mesh);
                 self.deleted_faces += 1;
                 self.deleted_edges += 1;
@@ -380,6 +382,43 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         debug_assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct);
 
         v1
+    }
+
+    pub fn update_face_corners<S: RealField>(&mut self, vid: VertId)
+    where
+        FaceData<R>: FaceAttributeGetter<S>,
+    {
+        // Find all faces incident on this vertex.
+        let fids: Vec<_> = self
+            .mesh
+            .vert_handle(vid)
+            .incident_faces()
+            .map(|f| f.id())
+            .collect();
+
+        // For each such face, see if we need to update one of its corners.
+        for fid in fids {
+            let face_handle = self.mesh.face_handle(fid);
+            // Get the current topology ids, as well as the stored ids inside the face data.
+            let vert_ids: Vec<_> = face_handle.vertex_ids().collect();
+            let data_ids = face_handle.data().attribute_vertices().to_vec();
+
+            // See if there is a vertex id in the face data which is not present in the topology.
+            let index = data_ids
+                .iter()
+                .position(|id| !vert_ids.iter().any(|vid| *vid == *id));
+            // If such a vertex exists then it must be the current verex.
+            match index {
+                Some(i) => {
+                    self.mesh.face_data(fid).attribute_vertices_mut()[i] = vid;
+                }
+                _ => {}
+            }
+
+            let face_handle = self.mesh.face_handle(fid);
+            let vert_ids: Vec<_> = face_handle.vertex_ids().collect();
+            let data_ids = face_handle.data().attribute_vertices().to_vec();
+        }
     }
 }
 
@@ -418,7 +457,7 @@ mod tests {
 
         let redge = deleter.end_deletion();
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
     }
 }

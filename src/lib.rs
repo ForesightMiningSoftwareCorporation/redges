@@ -13,6 +13,7 @@ pub mod iterators;
 pub mod mesh_deleter;
 pub mod validation;
 pub mod vert_handle;
+pub mod wedge;
 
 pub use algorithms::quadric_simplification;
 pub mod queue;
@@ -327,6 +328,7 @@ impl<R: RedgeContainers> Redge<R> {
     }
 
     pub fn face_handle<'r>(&'r self, id: FaceId) -> FaceHandle<'r, R> {
+        assert!(id != FaceId::ABSENT);
         assert!(id.to_index() < self.faces_meta.len());
         FaceHandle::new(id, self)
     }
@@ -385,6 +387,7 @@ impl<R: RedgeContainers> Redge<R> {
             face_data.push(self.face_data.get(face.id.to_index() as u64).clone());
         }
 
+        assert!(face_indices.len() == face_data.len());
         (verts, face_indices, face_data)
     }
 
@@ -458,7 +461,7 @@ impl<R: RedgeContainers> Redge<R> {
         let vn = self.add_vert(mid);
 
         let handle = self.edge_handle(eid);
-        let hedges_to_split: Vec<_> = handle.hedge().radial_neighbours().map(|h| h.id()).collect();
+        let hedges_to_split: Vec<_> = handle.hedge().radial_loop().map(|h| h.id()).collect();
 
         let [v1, v2] = handle.vertex_ids();
 
@@ -790,12 +793,12 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/before_flip.obj");
 
         redge.flip_edge(EdgeId(0));
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/after_flip.obj");
     }
 
@@ -822,12 +825,12 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/before_flip.obj");
 
         redge.split_edge(EdgeId(0));
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/after_flip.obj");
     }
 
@@ -850,7 +853,7 @@ mod tests {
 
         debug_assert!(manifold_state(&redge) == RedgeManifoldness::IsManifold,);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/tetrahedron.obj");
 
         let ObjData {
@@ -870,7 +873,7 @@ mod tests {
 
         debug_assert!(manifold_state(&redge) == RedgeManifoldness::IsManifold);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
 
         let ObjData {
@@ -891,7 +894,7 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/non_manifold_tet.obj");
 
         let ObjData {
@@ -912,7 +915,7 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/triangle.obj");
 
         let ObjData {
@@ -933,7 +936,7 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/triforce.obj");
 
         let ObjData {
@@ -954,7 +957,7 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/triple_triangle.obj");
     }
 }

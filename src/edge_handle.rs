@@ -106,11 +106,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         let set1: Vec<VertId> = v1.neighbours().map(|v| v.id()).collect();
         let count = v2.neighbours().filter(|v| set1.contains(&v.id())).count();
 
-        if count != 2 {
-            return false;
-        }
-
-        if count != 2 {
+        if count > 2 {
             return false;
         }
 
@@ -145,7 +141,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
 
     pub fn is_boundary(&self) -> bool {
         self.redge.edges_meta[self.id.to_index()].hedge_id == HedgeId::ABSENT
-            || self.hedge().radial_neighbours().count() <= 1
+            || self.hedge().radial_loop().count() <= 1
     }
 
     pub fn has_hedge(&self) -> bool {

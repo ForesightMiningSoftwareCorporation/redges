@@ -269,7 +269,7 @@ where
         res += (a_valence as isize - target_val(&edge.v1()) as isize).abs()
             + (b_valence as isize - target_val(&edge.v2()) as isize).abs();
 
-        for hedge in edge.hedge().radial_neighbours() {
+        for hedge in edge.hedge().radial_loop() {
             let valence = hedge.face_prev().source().star_edges().count();
             res += (valence as isize - target_val(&hedge.face_prev().source()) as isize).abs();
         }
@@ -361,7 +361,7 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/before_refinement.obj");
 
         let number_of_subdivisions = 4000;
@@ -378,7 +378,7 @@ mod tests {
             );
         }
 
-        let (vs, fs) = context.mesh.to_face_list();
+        let (vs, fs, _) = context.mesh.to_face_list();
         ObjData::export(&(&vs, &fs), "out/after_refinement.obj");
     }
 }

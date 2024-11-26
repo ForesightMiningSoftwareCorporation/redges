@@ -50,6 +50,20 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
         VertexStarEdgesIter::new(self.id, self.redge)
     }
 
+    pub fn star_edges_from(&self, edge_id: EdgeId) -> VertexStarEdgesIter<'r, R> {
+        debug_assert!(
+            self.redge.edge_handle(edge_id).v1().id() == self.id
+                || self.redge.edge_handle(edge_id).v2().id() == self.id
+        );
+        VertexStarEdgesIter {
+            start_edge: edge_id,
+            current_edge: edge_id,
+            focused_vertex: self.id,
+            start: true,
+            redge: self.redge,
+        }
+    }
+
     pub fn link_edges(&self) -> VertexLinkEdgesIter<'r, R> {
         VertexLinkEdgesIter::new(self.id, self.redge)
     }
@@ -70,5 +84,9 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
 
     pub fn pick_different(&self, eid: EdgeId) -> Option<EdgeHandle<'r, R>> {
         self.star_edges().find(|e| e.id() != eid)
+    }
+
+    pub fn count_incident_boundary_edges(&self) -> usize {
+        self.star_edges().filter(|e| e.is_boundary()).count()
     }
 }
