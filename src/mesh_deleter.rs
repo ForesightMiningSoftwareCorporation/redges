@@ -304,9 +304,6 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         VertData<R>: Index<usize, Output = S>,
         S: RealField,
     {
-        println!("start");
-        println!("{:?}", self.mesh.hedges_meta[356503]);
-        println!("{:?}", self.mesh.hedges_meta[356503]);
         // Collect all necessary elements before breaking the topology.
         let edge_handle = self.mesh.edge_handle(edge_id);
         let hedges_to_collapse: Vec<_> =
@@ -334,20 +331,12 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         remove_edge_from_cycle(edge_id, Endpoint::V1, &mut self.mesh);
         remove_edge_from_cycle(edge_id, Endpoint::V2, &mut self.mesh);
 
-        println!("removed edge");
-        println!("{:?}", self.mesh.hedges_meta[356503]);
-        println!("{:?}", self.mesh.hedges_meta[356503]);
-
         let mut faces = Vec::new();
         // Join the hedges of each face.
         for hid in hedges_to_collapse {
             faces.push(self.mesh.hedges_meta[hid.to_index()].face_id);
             hedge_collapse(hid, &mut self.mesh);
         }
-
-        println!("collapsed hedges");
-        println!("{:?}", self.mesh.hedges_meta[356503]);
-        println!("{:?}", self.mesh.hedges_meta[356503]);
 
         // Update the edges incident on v2 to point to v1 instead.
         for eid in &v2_edges {
@@ -374,30 +363,14 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         disable_edge_meta(edge_id, &mut self.mesh);
         disable_vert_meta(v2, &mut self.mesh);
 
-        println!("disabled edge");
-        println!("{:?}", self.mesh.hedges_meta[356503]);
-        println!("{:?}", self.mesh.hedges_meta[356503]);
-
         for face in faces {
             if self.mesh.face_handle(face).side_count() == 2 {
-                println!("digon face ");
-                let hedges = self
-                    .mesh
-                    .face_handle(face)
-                    .hedge()
-                    .face_loop()
-                    .map(|h| h.id())
-                    .collect::<Vec<_>>();
-                println!("{:?}", hedges);
                 fix_digon_face(face, &mut self.mesh);
                 self.deleted_faces += 1;
                 self.deleted_edges += 1;
             }
         }
 
-        println!("fixed digons");
-        println!("{:?}", self.mesh.hedges_meta[356503]);
-        println!("{:?}", self.mesh.hedges_meta[356503]);
         debug_assert!(correctness_state(&self.mesh) == RedgeCorrectness::Correct);
 
         v1
@@ -476,7 +449,7 @@ mod tests {
 
         let redge = deleter.end_deletion();
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
     }
 }

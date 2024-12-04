@@ -64,6 +64,13 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
         None
     }
 
+    #[inline]
+    pub fn is_isolated(&'r self) -> bool {
+        self.hedge()
+            .face_loop()
+            .all(|h| h.radial_loop().count() == 1)
+    }
+
     /// Count the number of sides in the face.
     pub fn side_count(&self) -> usize {
         self.hedge().face_loop().count()

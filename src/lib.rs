@@ -793,12 +793,12 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/before_flip.obj");
 
         redge.flip_edge(EdgeId(0));
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/after_flip.obj");
     }
 
@@ -825,12 +825,12 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/before_flip.obj");
 
         redge.split_edge(EdgeId(0));
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/after_flip.obj");
     }
 
@@ -853,7 +853,7 @@ mod tests {
 
         debug_assert!(manifold_state(&redge) == RedgeManifoldness::IsManifold,);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/tetrahedron.obj");
 
         let ObjData {
@@ -873,7 +873,7 @@ mod tests {
 
         debug_assert!(manifold_state(&redge) == RedgeManifoldness::IsManifold);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/loop_cube.obj");
 
         let ObjData {
@@ -894,7 +894,7 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/non_manifold_tet.obj");
 
         let ObjData {
@@ -915,7 +915,7 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/triangle.obj");
 
         let ObjData {
@@ -936,7 +936,7 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/triforce.obj");
 
         let ObjData {
@@ -957,7 +957,7 @@ mod tests {
         let state = manifold_state(&redge);
         debug_assert!(state != RedgeManifoldness::IsManifold, "{:?}", state);
 
-        let (vs, fs) = redge.to_face_list();
+        let (vs, fs, _) = redge.to_face_list();
         ObjData::export(&(&vs, &fs), "out/triple_triangle.obj");
     }
 }
