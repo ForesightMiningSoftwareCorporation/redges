@@ -56,7 +56,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
     }
 
     #[inline]
-    pub fn vertex_by_handle(&'r self, vid: VertId) -> Option<VertHandle<'r, R>> {
+    pub fn vertex_by_id(&'r self, vid: VertId) -> Option<VertHandle<'r, R>> {
         if self.hedge().face_loop().any(|h| h.source().id() == vid) {
             return Some(self.redge.vert_handle(vid));
         }

@@ -74,6 +74,7 @@ impl<S: RealField> WedgeDS<S> {
     pub fn wedge_quadric<'r, R>(
         &self,
         edge: &EdgeHandle<'r, R>,
+        attribute_count: usize,
     ) -> (DMatrix<S>, DVector<S>, S, Vec<(usize, usize)>, Vec<usize>)
     where
         R: RedgeContainers,
@@ -81,8 +82,16 @@ impl<S: RealField> WedgeDS<S> {
         FaceData<R>: FaceAttributeGetter<S>,
         S: ComplexField,
     {
-        let f1 = edge.hedge().face();
-        let f2 = edge.hedge().radial_next().face();
+        // In non-manifold meshes, sometimes we generate weird edges that don't have incident faces.
+        // but they could still connect to full faces whose quadrics we must optimize.
+        let [f1, f2] = if edge.has_hedge() {
+            let f1 = edge.hedge().face().id();
+            let f2 = edge.hedge().radial_next().face().id();
+
+            [f1, f2]
+        } else {
+            [FaceId::ABSENT, FaceId::ABSENT]
+        };
 
         // Add the wedges of all faces touching the edge, except the two faces intersecting
         // at the edge.
@@ -94,7 +103,7 @@ impl<S: RealField> WedgeDS<S> {
             .map(|f| (edge.v1(), f))
             .chain(edge.v2().incident_faces().map(|f| (edge.v2(), f)))
             // Skip the two faces sharing the edge.
-            .filter(|f| f.1.id() != f1.id() && f.1.id() != f2.id())
+            .filter(|f| f.1.id() != f1 && f.1.id() != f2)
         {
             let wid = self.wedge_id_from_corner(vert.id(), face.id()).unwrap();
 
@@ -128,10 +137,9 @@ impl<S: RealField> WedgeDS<S> {
             }
         }
 
-        let attrib_count = edge.hedge().face().data().attribute_count();
         let wedge_count = wedges.len();
         // 3 because there are 3 coordinates in R^3.
-        let dimension = 3 + wedge_count * attrib_count;
+        let dimension = 3 + wedge_count * attribute_count;
         let mut q = DMatrix::zeros(dimension, dimension);
         let mut final_b = DVector::zeros(dimension);
         let mut final_d = S::from(0.).unwrap();
@@ -193,6 +201,11 @@ impl<S: RealField> WedgeDS<S> {
         FaceData<R>: FaceAttributeGetter<S>,
         S: ComplexField,
     {
+        // TODO: hack for non manifold weird cases, we need to refactor this function.
+        if !edge.has_hedge() {
+            return [None, None];
+        }
+
         let mut result = [None, None];
         let f = edge.hedge().face();
 
@@ -252,6 +265,7 @@ impl<S: RealField> WedgeDS<S> {
         edge: &EdgeHandle<'r, R>,
         wedges_to_merge: &Vec<(usize, usize)>,
         wedge_order: &Vec<usize>,
+        attribute_count: usize,
     ) where
         R: RedgeContainers,
         VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
@@ -284,11 +298,10 @@ impl<S: RealField> WedgeDS<S> {
         }
 
         // Update the values assigned to the wedge, be careful to follow the order returned by the edge cost function.
-        let attrib_count = edge.hedge().face().data().attribute_count();
         for i in 0..wedge_order.len() {
-            let offset = 3 + i * attrib_count;
+            let offset = 3 + i * attribute_count;
             let wedge = &mut self.wedges[wedge_order[i]];
-            for j in 0..attrib_count {
+            for j in 0..attribute_count {
                 wedge.attributes[j] = optimum[offset + j];
             }
         }
@@ -457,13 +470,15 @@ where
     FaceData<R>: FaceAttributeGetter<S>,
     VertData<R>: InnerSpace<S>,
 {
+    assert!(face.is_active());
     let vids = face.data().attribute_vertices();
+
     // Order is REALLY important. We should always use the face data ordering as the canonical ordering
     // (as opposed to the implicit orderign given by the redge topology). Be very careful when modifying this.
     let positions: Vec<_> = vids
         .iter()
         .map(|id| {
-            let d = face.vertex_by_handle(*id).unwrap().data().clone();
+            let d = face.vertex_by_id(*id).unwrap().data().clone();
             [d[0], d[1], d[2]]
         })
         .collect();
