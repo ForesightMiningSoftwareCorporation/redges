@@ -23,6 +23,10 @@ impl<'r, R: RedgeContainers> VertHandle<'r, R> {
         self.id
     }
 
+    pub fn has_edge(&self) -> bool {
+        self.redge.verts_meta[self.id.to_index()].edge_id != EdgeId::ABSENT
+    }
+
     pub fn edge(&self) -> EdgeHandle<'r, R> {
         EdgeHandle::new(
             self.redge.verts_meta[self.id.to_index()].edge_id,

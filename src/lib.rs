@@ -704,6 +704,16 @@ impl EdgeMetaData {
         }
     }
 
+    pub(crate) fn at_fallible(&mut self, vert_id: VertId) -> Option<&mut VertId> {
+        if vert_id == self.vert_ids[0] {
+            return Some(&mut self.vert_ids[0]);
+        } else if vert_id == self.vert_ids[1] {
+            return Some(&mut self.vert_ids[1]);
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn topology_intersection(&self, other: &EdgeMetaData) -> Option<VertId> {
         let vids = self.vert_ids;
         let oids = other.vert_ids;

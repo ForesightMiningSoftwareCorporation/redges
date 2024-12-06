@@ -91,9 +91,9 @@ pub struct VertexLinkEdgesIter<'r, R: RedgeContainers> {
 
 impl<'r, R: RedgeContainers> VertexLinkEdgesIter<'r, R> {
     pub(crate) fn new(vid: VertId, redge: &'r Redge<R>) -> Self {
-        let handle = redge.vert_handle(vid).edge();
-        let hid = if handle.has_hedge() {
-            handle.hedge().id()
+        let handle = redge.vert_handle(vid);
+        let hid = if handle.has_edge() && handle.edge().has_hedge() {
+            handle.edge().hedge().id()
         } else {
             HedgeId::ABSENT
         };
