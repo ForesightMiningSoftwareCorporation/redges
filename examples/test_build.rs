@@ -10,8 +10,8 @@ use std::time::Instant;
 mod wavefront_loader;
 use crate::wavefront_loader::*;
 
-pub type Vec2 = nalgebra::Vector2<f32>;
-pub type Vec3 = nalgebra::Vector3<f32>;
+pub type Vec2 = nalgebra::Vector2<f64>;
+pub type Vec3 = nalgebra::Vector3<f64>;
 
 #[derive(Debug, Default, Clone)]
 pub struct FaceData {
@@ -19,8 +19,8 @@ pub struct FaceData {
     pub verts: [VertId; 3],
 }
 
-impl FaceAttributeGetter<f32> for FaceData {
-    fn attribute(&self, vert_index: usize, attribute_id: usize) -> f32 {
+impl FaceAttributeGetter<f64> for FaceData {
+    fn attribute(&self, vert_index: usize, attribute_id: usize) -> f64 {
         self.uvs[vert_index][attribute_id]
     }
 
@@ -28,7 +28,7 @@ impl FaceAttributeGetter<f32> for FaceData {
         2
     }
 
-    fn attribute_mut(&mut self, vert_index: usize, attribute_id: usize) -> &mut f32 {
+    fn attribute_mut(&mut self, vert_index: usize, attribute_id: usize) -> &mut f64 {
         &mut self.uvs[vert_index][attribute_id]
     }
 
@@ -80,18 +80,31 @@ fn export_to_obj(vertices: &[Vec3], faces: &Vec<FaceData>, path: &str) -> std::i
 }
 
 fn main() {
-    let mut obj_data = ObjData::from_disk_file("assets/melodia.obj");
+    // let mut obj_data = ObjData::from_disk_file("assets/suzanne.obj");
+    // let mut obj_data = ObjData::from_disk_file("assets/melodia.obj");
+    // let mut obj_data = ObjData::from_disk_file("assets/stanford_dragon.obj");
+    // let mut obj_data =
+    //     ObjData::from_disk_file("assets/rwtextured/RWT1/scene_dense_mesh_refine_texture.obj");
+    let mut obj_data = ObjData::from_disk_file("assets/plane.obj");
+    // let mut obj_data = ObjData::from_disk_file("assets/rwtextured/RWT6/bridge_01.obj");
     if obj_data.uv_face_indices.is_empty() {
-        obj_data.uvs = vec![Vec2::new(0., 0.)];
+        obj_data.uvs = vec![nalgebra::Vector2::new(0., 0.)];
         obj_data.uv_face_indices = vec![vec![0; 3]; obj_data.vertex_face_indices.len()];
     }
+
     assert!(obj_data.uv_face_indices.len() == obj_data.vertex_face_indices.len());
     let mut faces: Vec<_> = (0..obj_data.vertex_face_indices.len())
         .map(|i| FaceData {
             uvs: [
-                obj_data.uvs[obj_data.uv_face_indices[i][0] as usize].clone(),
-                obj_data.uvs[obj_data.uv_face_indices[i][1] as usize].clone(),
-                obj_data.uvs[obj_data.uv_face_indices[i][2] as usize].clone(),
+                obj_data.uvs[obj_data.uv_face_indices[i][0] as usize]
+                    .clone()
+                    .map(|s| s as f64),
+                obj_data.uvs[obj_data.uv_face_indices[i][1] as usize]
+                    .clone()
+                    .map(|s| s as f64),
+                obj_data.uvs[obj_data.uv_face_indices[i][2] as usize]
+                    .clone()
+                    .map(|s| s as f64),
             ],
             verts: [
                 VertId(obj_data.vertex_face_indices[i][0] as usize),
@@ -131,14 +144,13 @@ fn main() {
     }
 
     // dbg ===
-    println!(
-        "Exporting input, verts {}, indices {}, faces {}",
-        obj_data.vertices.len(),
-        obj_data.vertex_face_indices.len(),
-        faces.len()
-    );
+    let vertices: Vec<_> = obj_data
+        .vertices
+        .iter()
+        .map(|v| v.map(|s| s as f64))
+        .collect();
     let redge = Redge::<(_, _, _)>::new(
-        obj_data.vertices.clone(),
+        vertices.clone(),
         (),
         faces,
         obj_data
@@ -158,7 +170,7 @@ fn main() {
             strategy: SimplificationStrategy::Conservative,
             attribute_simplification:
                 quadric_simplification::AttributeSimplification::SimplifyAtributes,
-            target_face_count: face_count_before / 30,
+            target_face_count: face_count_before / 10,
         },
         |_, _| false,
     );
