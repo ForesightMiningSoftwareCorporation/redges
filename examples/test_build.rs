@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::Write;
 
 use redges::container_trait::FaceAttributeGetter;
+use redges::mesh_deleter::MeshDeleter;
 use redges::quadric_simplification::{QuadricSimplificationConfig, SimplificationStrategy};
 use redges::VertId;
 use redges::{quadric_simplification, Redge};
@@ -85,8 +86,10 @@ fn main() {
     // let mut obj_data = ObjData::from_disk_file("assets/stanford_dragon.obj");
     // let mut obj_data =
     //     ObjData::from_disk_file("assets/rwtextured/RWT1/scene_dense_mesh_refine_texture.obj");
-    let mut obj_data = ObjData::from_disk_file("assets/plane.obj");
+    // let mut obj_data = ObjData::from_disk_file("assets/plane.obj");
+    // let mut obj_data = ObjData::from_disk_file("assets/topo.obj");
     // let mut obj_data = ObjData::from_disk_file("assets/rwtextured/RWT6/bridge_01.obj");
+    let mut obj_data = ObjData::from_disk_file("assets/dragon.obj");
     if obj_data.uv_face_indices.is_empty() {
         obj_data.uvs = vec![nalgebra::Vector2::new(0., 0.)];
         obj_data.uv_face_indices = vec![vec![0; 3]; obj_data.vertex_face_indices.len()];
@@ -159,11 +162,13 @@ fn main() {
             .map(|l| l.clone().into_iter().map(|i| i as usize)),
     );
     let (vs, ids, fs) = redge.to_face_list();
-    export_to_obj(&vs, &fs, "dbg_uvs_before.obj");
+    let _ = export_to_obj(&vs, &fs, "dbg_uvs_before.obj");
 
     let face_count_before = redge.face_count();
     let start = Instant::now();
     println!("Simplifying");
+
+    let redge = redge.clean_overlapping_faces();
     let (redge, _) = quadric_simplification::quadric_simplify(
         redge,
         QuadricSimplificationConfig {
@@ -178,7 +183,7 @@ fn main() {
     println!("Time elapsed in simplify() is: {:?}", duration);
 
     let (vs, ids, fs) = redge.to_face_list();
-    export_to_obj(&vs, &fs, "dbg_uvs_after.obj");
+    let _ = export_to_obj(&vs, &fs, "dbg_uvs_after.obj");
     std::process::exit(0);
     //===
 }

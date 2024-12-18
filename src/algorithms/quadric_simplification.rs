@@ -1,29 +1,22 @@
 use core::f32;
 use core::hash::Hash;
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    ops::Mul,
-    usize,
-};
+use std::{collections::BTreeSet, ops::Mul, usize};
 
 use crate::{
-    algorithms::{quadrics::Quadric, queue::PQueue},
+    algorithms::queue::PQueue,
     container_trait::{
         FaceAttributeGetter, FaceData, PrimitiveContainer, VertData, VertexAttributeGetter,
     },
     edge_handle::EdgeHandle,
-    face_handle::{FaceDegeneracies, FaceHandle, FaceMetrics},
+    face_handle::{FaceHandle, FaceMetrics},
     mesh_deleter::MeshDeleter,
-    validation::{
-        correctness_state, validate_geometry_state, GeometryCorrectness, RedgeCorrectness,
-    },
-    vert_handle::VertHandle,
+    validation::{correctness_state, RedgeCorrectness},
     wavefront_loader::ObjData,
-    wedge::{self, WedgeDS},
-    EdgeId, FaceId, HedgeId, VertId,
+    wedge::WedgeDS,
+    EdgeId, FaceId, VertId,
 };
 use linear_isomorphic::prelude::*;
-use nalgebra::{constraint, ComplexField, DMatrix, DVector, Vector3, Vector4};
+use nalgebra::{ComplexField, DMatrix, DVector, Vector3};
 use num::{traits::float::FloatCore, Bounded, Float, Signed};
 use num_traits::float::TotalOrder;
 
@@ -524,6 +517,11 @@ where
         // ghost planes which are orthogonal to the edges surrounding the collapsing edge.
         if det < S::from(epsilon).unwrap() {
             for e in edge.v1().star_edges().chain(edge.v2().star_edges()) {
+                if !e.has_hedge() {
+                    continue;
+                }
+                // TODO: maybe this should be proportional to the BB of the mesh or the average edge length.
+                // instead of a cosntant value.
                 add_phantom_plane(&e, q, b, S::from(0.00000001).unwrap());
             }
         }
@@ -758,7 +756,6 @@ mod tests {
 
     use nalgebra::Vector3;
 
-    use crate::validation::{manifold_state, RedgeManifoldness};
     use crate::wavefront_loader::ObjData;
 
     use super::*;
@@ -786,7 +783,7 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let (redge, cost) = quadric_simplify(
+        let (redge, _cost) = quadric_simplify(
             redge,
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Aggressive,

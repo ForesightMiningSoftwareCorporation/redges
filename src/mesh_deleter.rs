@@ -323,6 +323,24 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         disable_vert_meta(vert_id, &mut self.mesh);
     }
 
+    /// Inspect the mesh for overlapping faces and remove them. This is
+    /// expensive so only use it if you can't demonstrate that the mesh is manifold.
+    pub fn remove_overlapping_faces(&mut self) {
+        let faces_ids = self.mesh.meta_faces().map(|f| f.id()).collect::<Vec<_>>();
+
+        for fid in faces_ids {
+            let handle = self.mesh.face_handle(fid);
+            if !handle.is_active() {
+                continue;
+            }
+
+            let status = handle.check_degeneracies();
+            if status == FaceDegeneracies::Doppelganger {
+                self.remove_face(fid);
+            }
+        }
+    }
+
     // Note: There's no doubt this could be made more efficient, but
     // protecting the invariants is very hard. Don't touch this function
     // unless there's a REALLY compelling case it needs to be done.
@@ -498,12 +516,6 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         self.deleted_verts += 1;
 
         v1
-
-        // disable_edge_meta(edge_id, &mut self.mesh);
-        // disable_vert_meta(v2, &mut self.mesh);
-        // self.deleted_verts += 1;
-
-        // v1
     }
 
     pub fn collapse_edge_and_fix_exp<S>(&mut self, edge_id: EdgeId) -> VertId
@@ -519,6 +531,27 @@ impl<R: RedgeContainers> MeshDeleter<R> {
             .radial_loop()
             .map(|h| h.face().id())
             .collect::<Vec<_>>();
+
+        let dbg_faces: Vec<_> = edge_handle
+            .hedge()
+            .radial_loop()
+            .map(|h| h.face().id())
+            .collect();
+
+        for (i, f) in edge_handle
+            .hedge()
+            .radial_loop()
+            .map(|h| h.face().id())
+            .enumerate()
+        {
+            let verts: Vec<_> = self
+                .mesh
+                .face_handle(f)
+                .vertices()
+                .map(|v| v.data().clone())
+                .collect();
+            let vert_ids: Vec<_> = self.mesh.face_handle(f).vertex_ids().collect();
+        }
 
         let vid = self.collapse_edge_exp(edge_id);
 
@@ -551,7 +584,6 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         // Collapsing an edge in a triangular hole creates a hole with only two edges.
         // These holes are invisible and really hard to deal with, so just close them.
         let mut digon_holes = BTreeMap::new();
-
         for edge in self
             .mesh
             .vert_handle(vid)
@@ -586,6 +618,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
             }
         }
 
+        // Kill one of the dihedrons.
         for victim_dihedron in victim_dihedron_faces {
             self.remove_face(victim_dihedron);
         }

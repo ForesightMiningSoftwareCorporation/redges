@@ -27,6 +27,7 @@ use helpers::{
     link_face, link_hedges_in_face, remove_edge_from_cycle, split_hedge,
 };
 use linear_isomorphic::{InnerSpace, RealField};
+use mesh_deleter::MeshDeleter;
 use validation::{correctness_state, RedgeCorrectness};
 use vert_handle::VertHandle;
 mod wavefront_loader;
@@ -642,6 +643,15 @@ impl<R: RedgeContainers> Redge<R> {
         });
 
         id
+    }
+
+    /// In a non-manifold mesh, finds and removes faces that share the same vertices.
+    pub fn clean_overlapping_faces(self) -> Self {
+        let mut deleter = MeshDeleter::start_deletion(self);
+        deleter.remove_overlapping_faces();
+        let redge = deleter.end_deletion();
+
+        redge
     }
 }
 
