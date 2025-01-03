@@ -84,7 +84,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
             EdgeVertexType::V1 => self.metadata().v1_cycle.clone(),
             EdgeVertexType::V2 => self.metadata().v2_cycle.clone(),
             EdgeVertexType::NotInEdge => panic!(
-                "Vertex id {:?} not part of edge with id {:?} and pointing to {:?}.",
+                "Vertex id {:?} not part of edge with id {:?}. That edge points to {:?}.",
                 vert_id,
                 self.id,
                 self.vertex_ids(),

@@ -14,14 +14,15 @@ use crate::{
     wedge::WedgeDS,
     EdgeId, FaceId, VertId,
 };
-use linear_isomorphic::prelude::*;
-use nalgebra::{ComplexField, DVector, Vector3};
-use num::{traits::float::FloatCore, Bounded, Float, Signed};
-use num_traits::float::TotalOrder;
-
 use crate::{container_trait::RedgeContainers, Redge};
+use linear_isomorphic::prelude::*;
+use nalgebra::{ComplexField, DMatrix, DVector, Vector3};
+use num_traits::{
+    float::{FloatCore, TotalOrder},
+    Bounded, Float, Signed,
+};
 
-const EDGE_WEIGHT_PENALTY: f32 = 1_000.0;
+const EDGE_WEIGHT_PENALTY: f32 = 10.0;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SimplificationStrategy {
@@ -101,6 +102,7 @@ where
             cost,
             QueueEdgeData {
                 id: eid,
+                geometric_cost,
                 attributes: optimum,
                 wedges_to_merge,
                 wedge_order,
@@ -130,7 +132,7 @@ where
         }
 
         debug_assert!(cost >= S::from(0.).unwrap());
-        worst_cost = Float::max(worst_cost, cost);
+        worst_cost = Float::max(worst_cost, geometric_cost);
 
         let edge_handle = deleter.mesh().edge_handle(eid);
         // Remove all edges that touch the current edge from the queue.
@@ -143,22 +145,16 @@ where
         {
             queue.remove(QueueEdgeData {
                 id: e.id(),
+                geometric_cost: S::default(),
                 attributes: DVector::default(),
                 wedge_order: Vec::new(),
                 wedges_to_merge: Vec::new(),
             });
         }
 
-        // if dbg < 200 {
-        //     let (vs, fs, _) = deleter.mesh.to_face_list();
-        //     ObjData::export(&(&vs, &fs), format!("step_{}.obj", dbg).as_str());
-
-        //     let state = correctness_state(deleter.mesh());
-        //     assert!(state == RedgeCorrectness::Correct);
-        // }
-
         // Compute the edge collapse and update the new position (and attributes if needed).
         let edge_handle = deleter.mesh.edge_handle(eid);
+
         wedges.collapse_wedge(
             &optimum,
             &edge_handle,
@@ -168,8 +164,8 @@ where
         );
         let v1 = edge_handle.v1().id();
         let v2 = edge_handle.v2().id();
+
         let vid = deleter.collapse_edge_and_fix(eid);
-        // let vid = deleter.collapse_edge(eid);
 
         let deleted = if vid == v1 {
             v2
@@ -234,18 +230,19 @@ where
             let e = deleter.mesh.edge_handle(eid);
             assert!(e.is_active());
 
-            let (mut cost, optimum, wedges_to_merge, wedge_order) =
+            let (mut cost, geom_cost, optimum, wedges_to_merge, wedge_order) =
                 edge_cost_with_wedges(&e, &wedges, attribute_count);
 
             let [v1, v2] = e.vertex_ids();
             if locked_vertex(v1, &deleter.mesh) || locked_vertex(v2, &deleter.mesh) {
-                cost += S::from(EDGE_WEIGHT_PENALTY).unwrap();
+                cost += S::from(EDGE_WEIGHT_PENALTY * 100.).unwrap();
             }
 
             queue.push(
                 cost,
                 QueueEdgeData {
                     id: e.id(),
+                    geometric_cost: geom_cost,
                     attributes: optimum,
                     wedges_to_merge,
                     wedge_order,
@@ -353,6 +350,7 @@ fn sync_wedge_and_redge<R: RedgeContainers, S: RealField>(
 
 struct QueueEdgeData<S> {
     id: EdgeId,
+    geometric_cost: S,
     attributes: DVector<S>,
     /// The wedges that must be merged after an edge collapse.
     wedges_to_merge: Vec<(usize, usize)>,
@@ -393,12 +391,13 @@ where
 {
     let mut queue = PQueue::with_capacity(mesh.edge_count());
     for edge in mesh.meta_edges() {
-        let (cost, optimum, wedges_to_merge, wedge_order) =
+        let (cost, geom_cost, optimum, wedges_to_merge, wedge_order) =
             edge_cost_with_wedges(&edge, &wedges, attribute_count);
         queue.push(
             cost,
             QueueEdgeData {
                 id: edge.id(),
+                geometric_cost: geom_cost,
                 attributes: optimum,
                 wedges_to_merge,
                 wedge_order,
@@ -413,20 +412,17 @@ fn edge_cost_with_wedges<'r, S, R: RedgeContainers>(
     edge: &EdgeHandle<'r, R>,
     wedges: &WedgeDS<S>,
     attribute_count: usize,
-) -> (S, nalgebra::DVector<S>, Vec<(usize, usize)>, Vec<usize>)
+) -> (S, S, nalgebra::DVector<S>, Vec<(usize, usize)>, Vec<usize>)
 where
     S: RealField + Mul<VertData<R>, Output = VertData<R>> + ComplexField,
     VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
     FaceData<R>: FaceAttributeGetter<S>,
 {
-    let (mut q, mut b, mut final_d, wedges_to_merge, wedge_order) =
+    let (mut q, mut b, mut final_d, geom_q, geom_b, geom_d, wedges_to_merge, wedge_order) =
         wedges.wedge_quadric(edge, attribute_count);
 
-    let boundary_penalty = S::from(EDGE_WEIGHT_PENALTY).unwrap();
-
-    // Add a constraint planes for boundary edges.
-    if edge.is_boundary() && edge.has_hedge() {
-        let mut add_phantom_plane = |e: &EdgeHandle<'r, R>| {
+    let mut add_phantom_plane =
+        |e: &EdgeHandle<'r, R>, q: &mut DMatrix<S>, b: &mut DVector<S>, w: S| {
             let n = e.hedge().face().unit_normal();
             let e_dir = (e.v2().data().clone() - e.v1().data().clone()).normalized();
             let constraint_normal = e_dir.cross(&n);
@@ -444,11 +440,13 @@ where
             let mut top_left = q.view_mut((0, 0), (3, 3));
             let mut top_three = b.rows_mut(0, 3);
 
-            top_left += nn;
-            top_three += n * d;
-            final_d += d * d;
+            top_left += nn * w;
+            top_three += n * d * w;
+            final_d += d * d * w;
         };
 
+    // Add constraint planes for boundary edges.
+    if edge.is_boundary() && edge.has_hedge() {
         // For each boundary edge that touches our active edge, we want
         // the final point to approximate the original boundary conditions as much as possible.
         // So add a phantom plane for each such edge, to nudge the final
@@ -461,7 +459,12 @@ where
             .map(|e| e.id())
             .collect();
         for eid in boundary_set {
-            add_phantom_plane(&edge.redge.edge_handle(eid));
+            add_phantom_plane(
+                &edge.redge.edge_handle(eid),
+                &mut q,
+                &mut b,
+                S::from(0.000001).unwrap(),
+            );
         }
     }
 
@@ -470,10 +473,27 @@ where
     let v1_is_fixed = edge.v1().is_in_boundary() && !edge.v2().is_in_boundary();
     let v2_is_fixed = edge.v2().is_in_boundary() && !edge.v1().is_in_boundary();
 
-    let solve = || {
+    let epsilon = 0.0001;
+    let mut solve = |q: &mut DMatrix<S>, b: &mut DVector<S>| {
         let det = q.determinant();
+
+        // Paolo Cignoni recommended that in cases where the quadrics are degenerate, we add
+        // ghost planes which are orthogonal to the edges surrounding the collapsing edge.
+        if det < S::from(epsilon).unwrap() {
+            for e in edge.v1().star_edges().chain(edge.v2().star_edges()) {
+                if !e.has_hedge() {
+                    continue;
+                }
+                // TODO: maybe this should be proportional to the BB of the mesh or the average edge length.
+                // instead of a cosntant value.
+                add_phantom_plane(&e, q, b, S::from(0.00000001).unwrap());
+            }
+        }
+        // Update the determinant.
+        let det = q.determinant();
+
         // Safety check to prevent numerical problems when solving the system.
-        if Float::abs(det) < S::from(f64::EPSILON * 100.).unwrap() || v1_is_fixed || v2_is_fixed {
+        if Float::abs(det) <= S::from(epsilon).unwrap() || v1_is_fixed || v2_is_fixed {
             return None;
         }
         if let Some(system) = q.clone().cholesky() {
@@ -483,7 +503,7 @@ where
         }
     };
 
-    let (optimal, mut cost) = match solve() {
+    let (mut optimal, mut cost) = match solve(&mut q, &mut b) {
         Some(optimal) => {
             let cost = (optimal.transpose() * &q * &optimal
                 + b.transpose() * &optimal * S::from(2.).unwrap())[0]
@@ -548,8 +568,31 @@ where
         }
     };
 
-    // See if any of the faces becomes degenerate (i.e. area of 0).
+    // If the optimum is very far away from the midpoint, it's likely that we had numerical issues in our matrix.
+    // so set to the midpoint to be safe.
     let p = Vector3::new(optimal[0], optimal[1], optimal[2]);
+
+    let mid = (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap();
+    let mid = Vector3::new(mid[0], mid[1], mid[2]);
+    let v1 = edge.v1().data().clone();
+    let v1 = Vector3::new(v1[0], v1[1], v1[2]);
+    let v2 = edge.v2().data().clone();
+    let v2 = Vector3::new(v2[0], v2[1], v2[2]);
+    if (p - mid).norm() > (v1 - v2).norm() * S::from(4.).unwrap().real() {
+        optimal[0] = mid[0];
+        optimal[1] = mid[1];
+        optimal[2] = mid[2];
+
+        cost = (optimal.transpose() * &q * &optimal
+            + b.transpose() * &optimal * S::from(2.).unwrap())[0]
+            + final_d;
+
+        if !cost.is_finite() {
+            cost = S::from(0.).unwrap();
+        }
+    }
+
+    // See if any of the faces becomes degenerate (i.e. area of 0).
     let f1 = if edge.has_hedge() {
         edge.hedge().face().id()
     } else {
@@ -581,11 +624,17 @@ where
         }
     }
 
+    let boundary_penalty = S::from(EDGE_WEIGHT_PENALTY).unwrap();
     assert!(cost.is_finite());
     let boundary_test =
         edge.is_boundary() || edge.v1().is_in_boundary() || edge.v2().is_in_boundary();
+    let geom_cost =
+        (optimal.fixed_rows::<3>(0).transpose() * &geom_q * &optimal.fixed_rows::<3>(0)
+            + geom_b.transpose() * &optimal.fixed_rows::<3>(0) * S::from(2.).unwrap())[0]
+            + geom_d;
     (
         cost + S::from(boundary_test as u8 as f32).unwrap() * boundary_penalty,
+        geom_cost,
         optimal,
         wedges_to_merge,
         wedge_order,
