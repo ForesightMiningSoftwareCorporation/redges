@@ -4,10 +4,10 @@ use crate::container_trait::{EdgeData, RedgeContainers, VertData};
 use crate::hedge_handle::HedgeHandle;
 use crate::vert_handle::VertHandle;
 
+use crate::HedgeId;
 use crate::{
     container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, Redge, StarCycleNode, VertId,
 };
-use crate::HedgeId;
 
 pub struct EdgeHandle<'r, R: RedgeContainers> {
     id: EdgeId,

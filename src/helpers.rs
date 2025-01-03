@@ -3,10 +3,9 @@
 
 use std::collections::BTreeSet;
 
-
 use crate::{
-    container_trait::RedgeContainers,
-    EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode, VertId,
+    container_trait::RedgeContainers, EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode,
+    VertId,
 };
 
 pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
