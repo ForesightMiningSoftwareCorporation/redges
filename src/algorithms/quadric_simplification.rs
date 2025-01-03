@@ -1,6 +1,6 @@
 use core::f32;
 use core::hash::Hash;
-use std::{collections::BTreeSet, ops::Mul, usize};
+use std::{collections::BTreeSet, ops::Mul};
 
 use crate::{
     algorithms::queue::PQueue,
@@ -233,7 +233,7 @@ where
             let face = deleter.mesh.face_handle(*fid);
             let updated: Vec<_> = face.hedge().face_loop().map(|h| h.source().id()).collect();
             // If we find a mismatched vertex index, we need to update the face.
-            if let Some(mismatched) = vids.iter().position(|id| !updated.contains(&id)) {
+            if let Some(mismatched) = vids.iter().position(|id| !updated.contains(id)) {
                 let data = deleter.mesh.face_data.get_mut(fid.to_index() as u64);
                 data.attribute_vertices_mut()[mismatched] = vid;
             }
@@ -459,20 +459,20 @@ where
     (res, worst_cost)
 }
 
-fn face_area_after<'r, R: RedgeContainers, S: RealField>(
-    face: &FaceHandle<'r, R>,
+fn face_area_after<R: RedgeContainers, S>(
+    face: &FaceHandle<'_, R>,
     vert_id: VertId,
     p: &Vector3<S>,
 ) -> S
 where
     VertData<R>: InnerSpace<S>,
-    S: nalgebra::ComplexField,
+    S: nalgebra::ComplexField + RealField,
 {
     let mut verts = Vec::new();
     for vert in face.vertices() {
         let id = vert.id();
         let pos = if id == vert_id {
-            p.clone()
+            *p
         } else {
             let d = vert.data().clone();
             Vector3::new(d[0], d[1], d[2])
@@ -484,8 +484,7 @@ where
     let d1 = verts[1] - verts[0];
     let d2 = verts[2] - verts[0];
 
-    let area = S::from_real(d1.cross(&d2).norm());
-    area
+    S::from_real(d1.cross(&d2).norm())
 }
 
 fn sync_wedge_and_redge<R: RedgeContainers, S: RealField>(
@@ -588,7 +587,7 @@ where
     let mut queue = PQueue::with_capacity(mesh.edge_count());
     for edge in mesh.meta_edges() {
         let (cost, geom_cost, optimum, wedges_to_merge, wedge_order) =
-            edge_cost_with_wedges(&edge, &wedges, attribute_count);
+            edge_cost_with_wedges(&edge, wedges, attribute_count);
         queue.push(
             cost,
             QueueEdgeAttributeData {
@@ -631,11 +630,12 @@ where
     queue
 }
 
+type EdgeCostData<S> = (S, S, nalgebra::DVector<S>, Vec<(usize, usize)>, Vec<usize>);
 fn edge_cost_with_wedges<'r, S, R: RedgeContainers>(
     edge: &EdgeHandle<'r, R>,
     wedges: &WedgeDS<S>,
     attribute_count: usize,
-) -> (S, S, nalgebra::DVector<S>, Vec<(usize, usize)>, Vec<usize>)
+) -> EdgeCostData<S>
 where
     S: RealField + Mul<VertData<R>, Output = VertData<R>> + ComplexField,
     VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
@@ -719,11 +719,7 @@ where
         if Float::abs(det) <= S::from(epsilon).unwrap() || v1_is_fixed || v2_is_fixed {
             return None;
         }
-        if let Some(system) = q.clone().cholesky() {
-            Some(system.solve(&-b.clone()))
-        } else {
-            None
-        }
+        q.clone().cholesky().map(|system| system.solve(&-b.clone()))
     };
 
     let (mut optimal, mut cost) = match solve(&mut q, &mut b) {
@@ -851,10 +847,9 @@ where
     assert!(cost.is_finite());
     let boundary_test =
         edge.is_boundary() || edge.v1().is_in_boundary() || edge.v2().is_in_boundary();
-    let geom_cost =
-        (optimal.fixed_rows::<3>(0).transpose() * &geom_q * &optimal.fixed_rows::<3>(0)
-            + geom_b.transpose() * &optimal.fixed_rows::<3>(0) * S::from(2.).unwrap())[0]
-            + geom_d;
+    let geom_cost = (optimal.fixed_rows::<3>(0).transpose() * geom_q * optimal.fixed_rows::<3>(0)
+        + geom_b.transpose() * optimal.fixed_rows::<3>(0) * S::from(2.).unwrap())[0]
+        + geom_d;
     (
         cost + S::from(boundary_test as u8 as f32).unwrap() * boundary_penalty,
         geom_cost,
@@ -980,17 +975,13 @@ where
         if Float::abs(det) <= S::from(epsilon).unwrap() || v1_is_fixed || v2_is_fixed {
             return None;
         }
-        if let Some(system) = q.clone().cholesky() {
-            Some(system.solve(&-b.clone()))
-        } else {
-            None
-        }
+        (*q).cholesky().map(|system| system.solve(&-*b))
     };
 
     let (mut optimal, mut cost) = match solve(&mut q, &mut b) {
         Some(optimal) => {
-            let cost = (optimal.transpose() * &q * &optimal
-                + b.transpose() * &optimal * S::from(2.).unwrap())[0]
+            let cost = (optimal.transpose() * q * optimal
+                + b.transpose() * optimal * S::from(2.).unwrap())[0]
                 + final_d;
 
             // TODO: is this caused just by floating point issues, or do we have a bug?
@@ -1018,8 +1009,7 @@ where
             res[1] = target[1];
             res[2] = target[2];
 
-            let cost = (res.transpose() * &q * &res + b.transpose() * &res * S::from(2.).unwrap())
-                [0]
+            let cost = (res.transpose() * q * res + b.transpose() * res * S::from(2.).unwrap())[0]
                 + final_d;
             // TODO: Is this just numerical problems or are the above values not wll made?
             let mut cost = S::from(0.).unwrap().max(cost);
@@ -1050,8 +1040,8 @@ where
         optimal[1] = mid[1];
         optimal[2] = mid[2];
 
-        cost = (optimal.transpose() * &q * &optimal
-            + b.transpose() * &optimal * S::from(2.).unwrap())[0]
+        cost = (optimal.transpose() * q * optimal + b.transpose() * optimal * S::from(2.).unwrap())
+            [0]
             + final_d;
         // TODO: is this caused just by floating point issues, or do we have a bug?
         cost = cost.max(S::from(0.0).unwrap());
@@ -1099,8 +1089,8 @@ where
 
     let boundary_test =
         edge.is_boundary() || edge.v1().is_in_boundary() || edge.v2().is_in_boundary();
-    let geom_cost = (optimal.fixed_rows::<3>(0).transpose() * &q * &optimal.fixed_rows::<3>(0)
-        + b.transpose() * &optimal.fixed_rows::<3>(0) * S::from(2.).unwrap())[0]
+    let geom_cost = (optimal.fixed_rows::<3>(0).transpose() * q * optimal.fixed_rows::<3>(0)
+        + b.transpose() * optimal.fixed_rows::<3>(0) * S::from(2.).unwrap())[0]
         + final_d;
     (
         cost + S::from(boundary_test as u8 as f32).unwrap() * boundary_penalty,
@@ -1110,7 +1100,7 @@ where
 }
 
 /// Test if an edge collapse would flip the direction of a face normal.
-fn collapse_would_flip_normal<'r, R, S>(edge: &EdgeHandle<'r, R>, new_pos: &VertData<R>) -> bool
+fn collapse_would_flip_normal<R, S>(edge: &EdgeHandle<'_, R>, new_pos: &VertData<R>) -> bool
 where
     R: RedgeContainers,
     S: FloatCore + RealField + nalgebra::ComplexField,
@@ -1153,7 +1143,7 @@ where
         let pp = hedge_at_point.face_prev().source().data().clone();
 
         let current_normal = get_normal(&p, &pp, &pn).normalized();
-        let new_normal = get_normal(&new_pos, &pp, &pn).normalized();
+        let new_normal = get_normal(new_pos, &pp, &pn).normalized();
 
         if new_normal.dot(&current_normal) <= S::from(0.0).unwrap() {
             return true;

@@ -32,13 +32,15 @@ impl FaceAttributeGetter<f64> for FaceData {
     }
 
     fn inner_index(&self, vid: VertId) -> usize {
-        self.verts.iter().position(|id| *id == vid).expect(
-            format!(
-                "Asked for position of vertex {:?} in face {:?}",
-                vid, self.verts
-            )
-            .as_str(),
-        )
+        self.verts
+            .iter()
+            .position(|id| *id == vid)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Asked for position of vertex {:?} in face {:?}",
+                    vid, self.verts
+                )
+            })
     }
 
     fn attribute_vertices(&self) -> &[VertId] {

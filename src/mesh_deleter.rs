@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Index,
-    usize,
 };
 
 use linear_isomorphic::RealField;
@@ -53,6 +52,12 @@ pub struct MeshDeleter<R: RedgeContainers> {
     deleted_faces: usize,
 }
 
+type FragmetnationMaps = (
+    HashMap<VertId, usize>,
+    HashMap<EdgeId, usize>,
+    HashMap<HedgeId, usize>,
+    HashMap<FaceId, usize>,
+);
 impl<R: RedgeContainers> MeshDeleter<R> {
     pub fn start_deletion(mesh: Redge<R>) -> Self {
         Self {
@@ -85,14 +90,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         self.mesh.face_count() - self.deleted_faces
     }
 
-    pub fn compute_fragmentation_maps(
-        &self,
-    ) -> (
-        HashMap<VertId, usize>,
-        HashMap<EdgeId, usize>,
-        HashMap<HedgeId, usize>,
-        HashMap<FaceId, usize>,
-    ) {
+    pub fn compute_fragmentation_maps(&self) -> FragmetnationMaps {
         let mut vertex_fragmentation = HashMap::<VertId, usize>::new();
         let mut counter = 0;
         for v in self.mesh.verts_meta.iter() {
@@ -378,8 +376,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
             self.remove_edge(*eid);
         }
         // Keep only sane edges.
-        v1_edges.retain(|eid| !degenerate.contains(&eid));
-        v2_edges.retain(|eid| !degenerate.contains(&eid));
+        v1_edges.retain(|eid| !degenerate.contains(eid));
+        v2_edges.retain(|eid| !degenerate.contains(eid));
 
         let edge_handle = self.mesh.edge_handle(edge_id);
 
@@ -545,11 +543,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
                 .iter()
                 .position(|id| !vert_ids.iter().any(|vid| *vid == *id));
             // If such a vertex exists then it must be the current verex.
-            match index {
-                Some(i) => {
-                    self.mesh.face_data(fid).attribute_vertices_mut()[i] = vid;
-                }
-                _ => {}
+            if let Some(i) = index {
+                self.mesh.face_data(fid).attribute_vertices_mut()[i] = vid;
             }
         }
     }

@@ -123,6 +123,7 @@ pub fn incremental_refinement_with_context<R: RedgeContainers, S, L, P>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn split_long_edges_with_queue<S, L, R>(
     mesh: &mut Redge<R>,
     high: S,
@@ -147,10 +148,8 @@ where
         let (e_id, weight) = pq.pop().unwrap();
         let edge_handle = mesh.edge_handle(e_id);
 
-        let adaptive_length = adaptive_target_length(
-            edge_handle.v1().id().0 as usize,
-            edge_handle.v2().id().0 as usize,
-        );
+        let adaptive_length =
+            adaptive_target_length(edge_handle.v1().id().0, edge_handle.v2().id().0);
         let target_length = high * adaptive_length;
         debug_assert!(target_length > S::from(f32::EPSILON * 10.0).unwrap());
         if S::from(weight).unwrap() > target_length {
@@ -162,7 +161,7 @@ where
             let in_feature = feature_edges.contains(&edge_handle.id());
 
             let new_vert = mesh.split_edge(edge_handle.id());
-            debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
+            debug_assert!(correctness_state(mesh) == RedgeCorrectness::Correct);
 
             if return_modified {
                 mod_verts.push(new_vert);
@@ -314,7 +313,7 @@ where
         let deviation_pre = deviation(&e);
 
         mesh.flip_edge(eid);
-        debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
+        debug_assert!(correctness_state(mesh) == RedgeCorrectness::Correct);
 
         let e = mesh.edge_handle(eid);
         let deviation_post = deviation(&e);
@@ -322,7 +321,7 @@ where
         if deviation_pre <= deviation_post {
             mesh.flip_edge(eid);
         }
-        debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
+        debug_assert!(correctness_state(mesh) == RedgeCorrectness::Correct);
     }
 }
 

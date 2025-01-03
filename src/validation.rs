@@ -67,11 +67,10 @@ pub enum HedgeCorrectness {
 // If the above condition is found to be false ping Makogan and tell him
 // to fix asap.
 pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectness {
-    if mesh.vert_data.len() != mesh.verts_meta.len() {
-        return RedgeCorrectness::MismatchingArrayLengths;
-    } else if mesh.edge_data.len() != mesh.edges_meta.len() && mesh.edge_data.len() != 0 {
-        return RedgeCorrectness::MismatchingArrayLengths;
-    } else if mesh.face_data.len() != mesh.faces_meta.len() && mesh.face_data.len() != 0 {
+    if mesh.vert_data.len() != mesh.verts_meta.len()
+        || mesh.edge_data.len() != mesh.edges_meta.len() && mesh.edge_data.len() != 0
+        || mesh.face_data.len() != mesh.faces_meta.len() && mesh.face_data.len() != 0
+    {
         return RedgeCorrectness::MismatchingArrayLengths;
     }
 
@@ -448,10 +447,6 @@ impl<V: Debug + InnerSpace<S>, S: RealField> PartialEq for TreePoint<V, S> {
         self.point[0] == other.point[0]
             && self.point[1] == other.point[1]
             && self.point[2] == other.point[2]
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        !self.eq(other)
     }
 }
 

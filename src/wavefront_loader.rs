@@ -33,7 +33,7 @@ pub struct ObjectRanges {
 
 impl ObjData {
     pub fn from_disk_file(path: &str) -> Self {
-        let file = File::open(path).expect(&format!("Cannot find {}.", path));
+        let file = File::open(path).unwrap();
         let reader = BufReader::new(file);
 
         let mut vert_topology = Vec::<Vec<u64>>::new();
@@ -579,7 +579,7 @@ fn add_face(
     for token in tokens {
         let inner_tokens = token.split("/").collect::<Vec<&str>>();
 
-        assert!(inner_tokens.len() <= 3 && inner_tokens.len() >= 1);
+        assert!(inner_tokens.len() <= 3 && !inner_tokens.is_empty());
 
         vert_topology
             .last_mut()

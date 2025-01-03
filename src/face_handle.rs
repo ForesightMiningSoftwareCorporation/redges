@@ -139,7 +139,7 @@ where
         // This implementation is expensive but reduces nuemrical errors by grabbing the best pair of edges to
         // compute a normal with.
         let pts: Vec<_> = self.vertices().map(|v| v.data().clone()).collect();
-        let best_vertex = angle_closest_to_90(&self);
+        let best_vertex = angle_closest_to_90(self);
         let d1 = pts[(best_vertex + 2) % 3].clone() - pts[(best_vertex + 1) % 3].clone();
         let d2 = pts[best_vertex].clone() - pts[(best_vertex + 1) % 3].clone();
 
@@ -162,7 +162,7 @@ where
     }
 }
 
-pub fn angle_closest_to_90<'r, R: RedgeContainers, S>(face: &FaceHandle<'r, R>) -> usize
+pub fn angle_closest_to_90<R: RedgeContainers, S>(face: &FaceHandle<'_, R>) -> usize
 where
     VertData<R>: InnerSpace<S>,
     S: RealField,
