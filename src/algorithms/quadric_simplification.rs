@@ -1183,8 +1183,9 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_quadric_simplification_closed() {
+    // Let's not make it a test for now, since we would need to add the assets.
+    // #[test]
+    fn _test_quadric_simplification_closed() {
         let ObjData {
             vertices,
             vertex_face_indices,
@@ -1220,8 +1221,9 @@ mod tests {
         ObjData::export(&(&vs, &fs), "out/simplified_closed.obj");
     }
 
-    #[test]
-    fn test_quadric_simplification_boundary() {
+    // Let's not make it a test for now, since we would need to add the assets.
+    // #[test]
+    fn _test_quadric_simplification_boundary() {
         let ObjData {
             vertices,
             vertex_face_indices,
