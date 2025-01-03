@@ -7,8 +7,7 @@ use redges::VertId;
 use redges::{quadric_simplification, Redge};
 use std::time::Instant;
 
-mod wavefront_loader;
-use crate::wavefront_loader::*;
+use redges::wavefront_loader::*;
 
 pub type Vec2 = nalgebra::Vector2<f32>;
 pub type Vec3 = nalgebra::Vector3<f32>;
@@ -80,7 +79,7 @@ fn export_to_obj(vertices: &[Vec3], faces: &Vec<FaceData>, path: &str) -> std::i
 }
 
 fn main() {
-    let mut obj_data = ObjData::from_disk_file("assets/melodia.obj");
+    let mut obj_data = ObjData::from_disk_file("assets/dragon.obj");
     if obj_data.uv_face_indices.is_empty() {
         obj_data.uvs = vec![Vec2::new(0., 0.)];
         obj_data.uv_face_indices = vec![vec![0; 3]; obj_data.vertex_face_indices.len()];
@@ -146,8 +145,8 @@ fn main() {
             .iter()
             .map(|l| l.clone().into_iter().map(|i| i as usize)),
     );
-    let (vs, ids, fs) = redge.to_face_list();
-    export_to_obj(&vs, &fs, "dbg_uvs_before.obj");
+    let (vs, _ids, fs) = redge.to_face_list();
+    let _ = export_to_obj(&vs, &fs, "tmp/dbg_uvs_before.obj");
 
     let face_count_before = redge.face_count();
     let start = Instant::now();
@@ -165,8 +164,8 @@ fn main() {
     let duration = start.elapsed();
     println!("Time elapsed in simplify() is: {:?}", duration);
 
-    let (vs, ids, fs) = redge.to_face_list();
-    export_to_obj(&vs, &fs, "dbg_uvs_after.obj");
+    let (vs, _ids, fs) = redge.to_face_list();
+    let _ = export_to_obj(&vs, &fs, "tmp/dbg_uvs_after.obj");
     std::process::exit(0);
     //===
 }

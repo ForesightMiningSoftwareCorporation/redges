@@ -1,11 +1,10 @@
-use core::f32;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet},
     usize,
 };
 
 use linear_isomorphic::{InnerSpace, RealField};
-use nalgebra::{ComplexField, DMatrix, DVector, Matrix4, Vector4};
+use nalgebra::{ComplexField, DMatrix, DVector, Vector4};
 
 use crate::{
     container_trait::{
@@ -13,8 +12,8 @@ use crate::{
     },
     edge_handle::EdgeHandle,
     face_handle::{FaceHandle, FaceMetrics},
-    vert_handle::{self, VertHandle},
-    FaceId, VertId, ABSENT,
+    vert_handle::VertHandle,
+    FaceId, VertId,
 };
 
 #[derive(Debug, Clone)]
@@ -339,10 +338,9 @@ impl<S: RealField> WedgeDS<S> {
 
             // See if the attribute of the prev face is contiguous with my attribute.
             let mut prev_wid = usize::MAX;
-            let mut prev_attrib = DVector::default();
             if let Some(face_list) = self.faces.get(&f_prev.id()) {
                 if let Some(wid) = face_list.get(&vert_handle.id()) {
-                    prev_attrib = self.wedges[*wid].attributes.clone();
+                    let prev_attrib = self.wedges[*wid].attributes.clone();
                     let d = (&attribute - &prev_attrib).norm();
 
                     if S::from_real(d) < S::from(0.0001).unwrap() {
@@ -353,10 +351,9 @@ impl<S: RealField> WedgeDS<S> {
 
             // See if the attribute of the next face is contiguous with my attribute.
             let mut next_wid = usize::MAX;
-            let mut next_attrib = DVector::default();
             if let Some(face_list) = self.faces.get(&f_next.id()) {
                 if let Some(wid) = face_list.get(&vert_handle.id()) {
-                    next_attrib = self.wedges[*wid].attributes.clone();
+                    let next_attrib = self.wedges[*wid].attributes.clone();
                     let d = (&attribute - &next_attrib).norm();
 
                     if S::from_real(d) < S::from(0.0001).unwrap() {

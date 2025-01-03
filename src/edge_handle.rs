@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 use crate::container_trait::{EdgeData, RedgeContainers, VertData};
 use crate::hedge_handle::HedgeHandle;
@@ -7,7 +7,7 @@ use crate::vert_handle::VertHandle;
 use crate::{
     container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, Redge, StarCycleNode, VertId,
 };
-use crate::{HedgeId, ABSENT};
+use crate::HedgeId;
 
 pub struct EdgeHandle<'r, R: RedgeContainers> {
     id: EdgeId,

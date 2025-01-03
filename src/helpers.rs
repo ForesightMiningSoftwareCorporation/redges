@@ -1,15 +1,11 @@
 //! WARNING: These functions can and will break invariants of the Redge
 //! use with extreme care.
 
-use std::{
-    collections::{BTreeSet, HashSet},
-    ops::Mul,
-};
+use std::collections::BTreeSet;
 
-use linear_isomorphic::{InnerSpace, RealField, VectorSpace};
 
 use crate::{
-    container_trait::{RedgeContainers, VertData},
+    container_trait::RedgeContainers,
     EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode, VertId,
 };
 

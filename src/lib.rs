@@ -22,14 +22,11 @@ use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, V
 use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
 use hedge_handle::HedgeHandle;
-use helpers::{
-    _collect_backward_cycle, _collect_forward_cycle, join_radial_cycles, join_vertex_cycles,
-    link_face, link_hedges_in_face, remove_edge_from_cycle, split_hedge,
-};
+use helpers::{join_vertex_cycles, link_face, remove_edge_from_cycle, split_hedge};
 use linear_isomorphic::{InnerSpace, RealField};
 use validation::{correctness_state, RedgeCorrectness};
 use vert_handle::VertHandle;
-mod wavefront_loader;
+pub mod wavefront_loader;
 
 macro_rules! define_id_struct {
     ($name:ident) => {
@@ -704,7 +701,7 @@ impl EdgeMetaData {
         }
     }
 
-    pub(crate) fn at_fallible(&mut self, vert_id: VertId) -> Option<&mut VertId> {
+    pub(crate) fn _at_fallible(&mut self, vert_id: VertId) -> Option<&mut VertId> {
         if vert_id == self.vert_ids[0] {
             return Some(&mut self.vert_ids[0]);
         } else if vert_id == self.vert_ids[1] {

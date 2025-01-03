@@ -1,6 +1,6 @@
 use std::{fmt::Debug, usize};
 
-use linear_isomorphic::{InnerSpace, RealField};
+use linear_isomorphic::RealField;
 use nalgebra::Vector3;
 
 use crate::VertId;

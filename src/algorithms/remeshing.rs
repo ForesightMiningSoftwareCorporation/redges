@@ -7,11 +7,8 @@ use std::{collections::HashSet, ops::Mul};
 use crate::{
     container_trait::{RedgeContainers, VertData},
     edge_handle::EdgeHandle,
-    hedge_handle::HedgeHandle,
-    helpers::_collect_forward_cycle,
     validation::{correctness_state, RedgeCorrectness},
     vert_handle::VertHandle,
-    wavefront_loader::ObjData,
     EdgeId, FaceId, Redge, VertId,
 };
 
@@ -76,7 +73,7 @@ pub fn incremental_refinement_with_context<R: RedgeContainers, S, L, P>(
     context: &mut RemeshingContext<S, R>,
     parameters: RemeshingParametersWithoutCollapse<S>,
     adaptive_target_length: L,
-    reproject: P,
+    _reproject: P,
 ) where
     S: RealField + num::traits::float::FloatCore + Mul<VertData<R>, Output = VertData<R>>,
     VertData<R>: InnerSpace<S>,
@@ -333,7 +330,6 @@ where
 mod tests {
     use nalgebra::Vector3;
 
-    use crate::validation::{manifold_state, RedgeManifoldness};
     use crate::wavefront_loader::ObjData;
 
     use super::{incremental_refinement_with_context, *};

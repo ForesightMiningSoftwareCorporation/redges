@@ -6,14 +6,12 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
-    iter,
     marker::PhantomData,
 };
 
 use linear_isomorphic::{InnerSpace, RealField};
 use num::{Bounded, Signed};
-use num_traits::real::Real;
-use rstar::{Point, RTree};
+use rstar::RTree;
 
 use crate::{
     container_trait::{PrimitiveContainer, RedgeContainers, VertData},

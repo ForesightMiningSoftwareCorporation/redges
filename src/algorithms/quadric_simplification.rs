@@ -1,29 +1,21 @@
 use core::f32;
 use core::hash::Hash;
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    ops::Mul,
-    usize,
-};
+use std::{collections::BTreeSet, ops::Mul, usize};
 
 use crate::{
-    algorithms::{quadrics::Quadric, queue::PQueue},
+    algorithms::queue::PQueue,
     container_trait::{
         FaceAttributeGetter, FaceData, PrimitiveContainer, VertData, VertexAttributeGetter,
     },
     edge_handle::EdgeHandle,
-    face_handle::{FaceDegeneracies, FaceHandle, FaceMetrics},
+    face_handle::{FaceHandle, FaceMetrics},
     mesh_deleter::MeshDeleter,
-    validation::{
-        correctness_state, validate_geometry_state, GeometryCorrectness, RedgeCorrectness,
-    },
-    vert_handle::VertHandle,
-    wavefront_loader::ObjData,
-    wedge::{self, WedgeDS},
-    EdgeId, FaceId, HedgeId, VertId,
+    validation::{correctness_state, RedgeCorrectness},
+    wedge::WedgeDS,
+    EdgeId, FaceId, VertId,
 };
 use linear_isomorphic::prelude::*;
-use nalgebra::{constraint, ComplexField, DMatrix, DVector, Vector3, Vector4};
+use nalgebra::{ComplexField, DVector, Vector3};
 use num::{traits::float::FloatCore, Bounded, Float, Signed};
 use num_traits::float::TotalOrder;
 
@@ -60,43 +52,6 @@ impl Default for QuadricSimplificationConfig {
             target_face_count: 10_000,
         }
     }
-}
-
-fn tmp_export_to_obj<Vec3: linear_isomorphic::InnerSpace<S>, S: RealField, R: RedgeContainers>(
-    vertices: &[Vec3],
-    faces: &Vec<FaceData<R>>,
-    path: &str,
-) -> std::io::Result<()>
-where
-    FaceData<R>: FaceAttributeGetter<S>,
-{
-    use std::io::Write;
-    let mut file = std::fs::File::create(path)?;
-    for v in vertices {
-        writeln!(file, "v {} {} {}", v[0], v[1], v[2],)?;
-    }
-
-    for face in faces {
-        writeln!(file, "vt {} {}", face.attribute(0, 0), face.attribute(0, 1))?;
-        writeln!(file, "vt {} {}", face.attribute(1, 0), face.attribute(1, 1))?;
-        writeln!(file, "vt {} {}", face.attribute(2, 0), face.attribute(2, 1))?;
-    }
-
-    for (i, face) in faces.iter().enumerate() {
-        let verts = face.attribute_vertices().to_vec();
-        writeln!(
-            file,
-            "f {}/{} {}/{} {}/{}",
-            verts[0].to_index() + 1,
-            i * 3 + 1, // vt
-            verts[1].to_index() + 1,
-            i * 3 + 2, // vt
-            verts[2].to_index() + 1,
-            i * 3 + 3, // vt
-        )?;
-    }
-
-    Ok(())
 }
 
 // Theory: https://www.cs.cmu.edu/~./garland/Papers/quadrics.pdf
@@ -141,10 +96,7 @@ where
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
     let mut worst_cost = <S as Float>::min_value();
-    let mut dbg = 0;
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
-        dbg += 1;
-
         let (
             cost,
             QueueEdgeData {
@@ -216,7 +168,7 @@ where
         );
         let v1 = edge_handle.v1().id();
         let v2 = edge_handle.v2().id();
-        let vid = deleter.collapse_edge_and_fix_exp(eid);
+        let vid = deleter.collapse_edge_and_fix(eid);
         // let vid = deleter.collapse_edge(eid);
 
         let deleted = if vid == v1 {
@@ -720,7 +672,6 @@ mod tests {
 
     use nalgebra::Vector3;
 
-    use crate::validation::{manifold_state, RedgeManifoldness};
     use crate::wavefront_loader::ObjData;
 
     use super::*;
@@ -748,7 +699,7 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
-        let (redge, cost) = quadric_simplify(
+        let (redge, _cost) = quadric_simplify(
             redge,
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Aggressive,
@@ -785,7 +736,7 @@ mod tests {
         );
 
         let start = Instant::now();
-        let (redge, cost) = quadric_simplify(
+        let (redge, _cost) = quadric_simplify(
             redge,
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Aggressive,

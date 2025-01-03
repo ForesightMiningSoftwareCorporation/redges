@@ -4,24 +4,18 @@ use std::{
     usize,
 };
 
-use linear_isomorphic::{ArithmeticType, InnerSpace, RealField};
-use num_traits::float::TotalOrder;
-use ordered_float::FloatCore;
+use linear_isomorphic::RealField;
 
 use crate::{
     container_trait::{
         FaceAttributeGetter, FaceData, PrimitiveContainer, RedgeContainers, VertData,
     },
-    edge_handle,
-    face_handle::{FaceDegeneracies, FaceMetrics},
+    face_handle::FaceDegeneracies,
     helpers::{
         digon_holes_to_edge, digon_to_edge, disable_edge_meta, disable_face_meta,
-        disable_hedge_meta, disable_vert_meta, hedge_collapse, join_radial_cycles,
-        join_vertex_cycles, join_vertex_cycles_at, remove_edge_from_cycle,
-        remove_hedge_from_radial,
+        disable_hedge_meta, disable_vert_meta, hedge_collapse, join_vertex_cycles_at,
+        remove_edge_from_cycle, remove_hedge_from_radial,
     },
-    validation::{correctness_state, RedgeCorrectness},
-    wavefront_loader::ObjData,
     EdgeId, Endpoint, FaceId, HedgeId, Redge, VertId,
 };
 
@@ -329,86 +323,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
     //
     // If you plan on modifying this function please read `docs/redge.pdf`.
     //
-    /// Currently only works for triangular faces. Only call on edges that
-    /// have faces pointing to them.
-    #[deprecated]
-    pub fn collapse_edge<S>(&mut self, edge_id: EdgeId) -> VertId
-    where
-        VertData<R>: Index<usize, Output = S>,
-        S: RealField,
-    {
-        // Collect all necessary elements before breaking the topology.
-        let edge_handle = self.mesh.edge_handle(edge_id);
-        let hedges_to_collapse: Vec<_> =
-            edge_handle.hedge().radial_loop().map(|f| f.id()).collect();
-
-        let v1_edges: Vec<_> = edge_handle
-            .v1()
-            .star_edges()
-            .map(|e| e.id())
-            .filter(|id| *id != edge_id)
-            .collect();
-        let v2_edges: Vec<_> = edge_handle
-            .v2()
-            .star_edges()
-            .map(|e| e.id())
-            .filter(|id| *id != edge_id)
-            .collect();
-
-        let v1 = edge_handle.v1().id();
-        let v2 = edge_handle.v2().id();
-
-        // For safety, make sure that v1 does not point to the current edge. Since we are about to remove it.
-        self.mesh.verts_meta[v1.to_index()].edge_id = v1_edges[0];
-
-        remove_edge_from_cycle(edge_id, Endpoint::V1, &mut self.mesh);
-        remove_edge_from_cycle(edge_id, Endpoint::V2, &mut self.mesh);
-
-        let mut faces = Vec::new();
-        // Join the hedges of each face.
-        for hid in hedges_to_collapse {
-            faces.push(self.mesh.hedges_meta[hid.to_index()].face_id);
-            hedge_collapse(hid, &mut self.mesh);
-        }
-
-        // Update the edges incident on v2 to point to v1 instead.
-        for eid in &v2_edges {
-            *self.mesh.edges_meta[eid.to_index()].at(v2) = v1;
-
-            let hedges: Vec<HedgeId> = self
-                .mesh
-                .edge_handle(*eid)
-                .hedge()
-                .radial_loop()
-                .map(|h| h.id())
-                .collect();
-
-            // Make sure that any hedges orbitting this edge have their sources updated appropriately.
-            for hid in hedges {
-                if self.mesh.hedges_meta[hid.to_index()].source_id == v2 {
-                    self.mesh.hedges_meta[hid.to_index()].source_id = v1;
-                }
-            }
-        }
-
-        join_vertex_cycles_at(v1_edges[0], v2_edges[0], v1, &mut self.mesh);
-
-        disable_edge_meta(edge_id, &mut self.mesh);
-        disable_vert_meta(v2, &mut self.mesh);
-        self.deleted_verts += 1;
-
-        for face in faces {
-            if self.mesh.face_handle(face).side_count() == 2 {
-                digon_to_edge(face, &mut self.mesh);
-                self.deleted_faces += 1;
-                self.deleted_edges += 1;
-            }
-        }
-
-        v1
-    }
-
-    fn collapse_edge_exp<S>(&mut self, edge_id: EdgeId) -> VertId
+    /// Currently only works for triangular faces.
+    fn collapse_edge<S>(&mut self, edge_id: EdgeId) -> VertId
     where
         VertData<R>: Index<usize, Output = S>,
         S: RealField,
@@ -506,7 +422,9 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         // v1
     }
 
-    pub fn collapse_edge_and_fix_exp<S>(&mut self, edge_id: EdgeId) -> VertId
+    /// Prefer this over `collapse_edge`. This will guarantee that the
+    /// resulting mesh has no degenerate geoemtry.
+    pub fn collapse_edge_and_fix<S>(&mut self, edge_id: EdgeId) -> VertId
     where
         VertData<R>: Index<usize, Output = S>,
         S: RealField,
@@ -520,7 +438,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
             .map(|h| h.face().id())
             .collect::<Vec<_>>();
 
-        let vid = self.collapse_edge_exp(edge_id);
+        let vid = self.collapse_edge(edge_id);
 
         // TODO: This should be the true logic, however, on the stanford dragon,
         // there is one particular vertex where edges keep getting collapsed
@@ -655,7 +573,7 @@ mod tests {
         debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
 
         let mut deleter = MeshDeleter::start_deletion(redge);
-        deleter.collapse_edge(EdgeId(0));
+        deleter.collapse_edge_and_fix(EdgeId(0));
 
         let state = manifold_state(deleter.mesh());
         debug_assert!(state == RedgeManifoldness::IsManifold, "{:?}", state);
