@@ -113,11 +113,11 @@ impl<S: RealField> WedgeDS<S> {
             // Skip the two faces sharing the edge.
             .filter(|f| f.1.id() != f1 && f.1.id() != f2)
         {
-            let wid = self.wedge_id_from_corner(vert.id(), face.id()).unwrap();
+            let (a, b, c) = face_geometric_quadric(&face);
 
+            let wid = self.wedge_id_from_corner(vert.id(), face.id()).unwrap();
             let data = wedges.entry(wid).or_insert(Vec::new());
 
-            let (a, b, c) = face_geometric_quadric(&face);
             let gradients = face_attribute_gradients(&face);
             let area = face.area();
 
@@ -405,6 +405,10 @@ impl<S: RealField> WedgeDS<S> {
     {
         for vert_handle in face.vertices() {
             let n = face.data().attribute_count();
+            if n == 0 {
+                break;
+            }
+
             let mut attribute = DVector::zeros(n);
             let vindex = face.data().inner_index(vert_handle.id());
             for i in 0..n {
@@ -522,7 +526,7 @@ impl<S: RealField> WedgeDS<S> {
     }
 }
 
-fn face_geometric_quadric<'r, R: RedgeContainers, S>(
+pub fn face_geometric_quadric<'r, R: RedgeContainers, S>(
     face: &FaceHandle<'r, R>,
 ) -> (nalgebra::Matrix3<S>, nalgebra::Vector3<S>, S)
 where

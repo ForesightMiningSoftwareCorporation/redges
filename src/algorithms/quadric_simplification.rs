@@ -16,7 +16,7 @@ use crate::{
 };
 use crate::{container_trait::RedgeContainers, Redge};
 use linear_isomorphic::prelude::*;
-use nalgebra::{ComplexField, DMatrix, DVector, Vector3};
+use nalgebra::{ComplexField, DMatrix, DVector, Matrix3, Vector3};
 use num_traits::{
     float::{FloatCore, TotalOrder},
     Bounded, Float, Signed,
@@ -87,12 +87,47 @@ where
         *mesh.vert_data.get_mut(i as u64) = pos * scale;
     }
 
-    let mut wedges = construct_wedges(&mesh);
+    let (mut mesh, cost) = match config.attribute_simplification {
+        AttributeSimplification::SimplifyAtributes => {
+            simplify_with_attributes(mesh, config, locked_vertex)
+        }
+        AttributeSimplification::NoAttributeSimplification => {
+            simplify_without_attributes(mesh, config, locked_vertex)
+        }
+    };
 
+    for i in 0..mesh.vert_data.len() {
+        let pos = mesh.vert_data.get(i as u64).clone();
+        *mesh.vert_data.get_mut(i as u64) = pos * (S::from(1.0).unwrap() / scale);
+    }
+
+    (mesh, cost)
+}
+
+fn simplify_with_attributes<S, R, L>(
+    mesh: Redge<R>,
+    config: QuadricSimplificationConfig,
+    locked_vertex: L,
+) -> (Redge<R>, S)
+where
+    R: RedgeContainers,
+    S: RealField
+        + nalgebra::ComplexField
+        + FloatCore
+        + Mul<VertData<R>, Output = VertData<R>>
+        + TotalOrder
+        + std::iter::Sum
+        + Bounded
+        + Signed,
+    VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
+    FaceData<R>: FaceAttributeGetter<S>,
+    L: Fn(VertId, &Redge<R>) -> bool,
+{
+    let mut wedges = construct_wedges(&mesh);
     let attribute_count = mesh.face_data.get(0).attribute_count();
 
     // Start the queue with each edge's cost.
-    let mut queue = initialize_queue::<S, R>(&mesh, &wedges, attribute_count);
+    let mut queue = initialize_queue_with_attributes::<S, R>(&mesh, &wedges, attribute_count);
 
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
@@ -100,7 +135,7 @@ where
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
         let (
             cost,
-            QueueEdgeData {
+            QueueEdgeAttributeData {
                 id: eid,
                 geometric_cost,
                 attributes: optimum,
@@ -143,7 +178,7 @@ where
             .chain(edge_handle.v2().star_edges())
             .chain(edge_handle.v2().link_edges())
         {
-            queue.remove(QueueEdgeData {
+            queue.remove(QueueEdgeAttributeData {
                 id: e.id(),
                 geometric_cost: S::default(),
                 attributes: DVector::default(),
@@ -240,7 +275,7 @@ where
 
             queue.push(
                 cost,
-                QueueEdgeData {
+                QueueEdgeAttributeData {
                     id: e.id(),
                     geometric_cost: geom_cost,
                     attributes: optimum,
@@ -263,11 +298,6 @@ where
         }
     }
 
-    for i in 0..deleter.mesh.vert_data.len() {
-        let pos = deleter.mesh.vert_data.get(i as u64).clone();
-        *deleter.mesh.vert_data.get_mut(i as u64) = pos * (S::from(1.0).unwrap() / scale);
-    }
-
     let (vert_frag, ..) = deleter.compute_fragmentation_maps();
     let mut res = deleter.end_deletion();
     debug_assert!(correctness_state(&res) == RedgeCorrectness::Correct);
@@ -279,6 +309,152 @@ where
             *v = VertId(*vert_frag.get(&*v).unwrap());
         }
     }
+
+    (res, worst_cost)
+}
+
+fn simplify_without_attributes<S, R, L>(
+    mesh: Redge<R>,
+    config: QuadricSimplificationConfig,
+    locked_vertex: L,
+) -> (Redge<R>, S)
+where
+    R: RedgeContainers,
+    S: RealField
+        + nalgebra::ComplexField
+        + FloatCore
+        + Mul<VertData<R>, Output = VertData<R>>
+        + TotalOrder
+        + std::iter::Sum
+        + Bounded
+        + Signed,
+    VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
+    FaceData<R>: FaceAttributeGetter<S>,
+    L: Fn(VertId, &Redge<R>) -> bool,
+{
+    // Start the queue with each edge's cost.
+    let mut queue = initialize_queue_without_attributes::<S, R>(&mesh);
+
+    let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
+
+    let mut worst_cost = <S as Float>::min_value();
+    while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
+        let (
+            cost,
+            QueueEdgeSimpleData {
+                id: eid,
+                geometric_cost,
+                optimum,
+            },
+        ) = queue.pop().unwrap();
+
+        let edge_handle = deleter.mesh().edge_handle(eid);
+
+        // Skip inactive edges.
+        if !edge_handle.is_active() {
+            continue;
+        }
+
+        // Skip bad edges.
+        let edge_handle = deleter.mesh().edge_handle(eid);
+        if !edge_handle.can_collapse() {
+            continue;
+        }
+
+        let mut geom_optimum = VertData::<R>::default();
+        geom_optimum[0] = optimum[0];
+        geom_optimum[1] = optimum[1];
+        geom_optimum[2] = optimum[2];
+
+        if collapse_would_flip_normal(&edge_handle, &geom_optimum) {
+            continue;
+        }
+
+        debug_assert!(cost >= S::from(0.).unwrap(), "{}", cost);
+        worst_cost = Float::max(worst_cost, geometric_cost);
+
+        let edge_handle = deleter.mesh().edge_handle(eid);
+        // Remove all edges that touch the current edge from the queue.
+        for e in edge_handle
+            .v1()
+            .star_edges()
+            .chain(edge_handle.v1().link_edges())
+            .chain(edge_handle.v2().star_edges())
+            .chain(edge_handle.v2().link_edges())
+        {
+            queue.remove(QueueEdgeSimpleData {
+                id: e.id(),
+                geometric_cost: S::default(),
+                optimum: Vector3::default(),
+            });
+        }
+
+        // Compute the edge collapse and update the new position (and attributes if needed).
+        let vid = deleter.collapse_edge_and_fix(eid);
+
+        deleter.mesh().vert_data(vid)[0] = optimum[0];
+        deleter.mesh().vert_data(vid)[1] = optimum[1];
+        deleter.mesh().vert_data(vid)[2] = optimum[2];
+
+        let vn = deleter.mesh.vert_handle(vid);
+        let edges: Vec<_> = vn
+            .star_edges()
+            .chain(vn.link_edges())
+            .map(|e| e.id())
+            .collect();
+
+        // The vertex could have no good neighbourhood. Consider for example
+        // collapsing an edge in an isolated triangle. In these cases,
+        // remove the geometry and move on.
+        match edges.len() {
+            0 => {
+                deleter.remove_vert(vid);
+                continue;
+            }
+            1 => {
+                deleter.remove_edge(edges[0]);
+                continue;
+            }
+            _ => {}
+        }
+
+        for eid in edges {
+            let e = deleter.mesh.edge_handle(eid);
+            assert!(e.is_active());
+
+            let (mut cost, geom_cost, optimum) = edge_cost_without_attributes(&e);
+            debug_assert!(cost >= S::from(0.).unwrap());
+
+            let [v1, v2] = e.vertex_ids();
+            if locked_vertex(v1, &deleter.mesh) || locked_vertex(v2, &deleter.mesh) {
+                cost += S::from(EDGE_WEIGHT_PENALTY * 100.).unwrap();
+            }
+
+            queue.push(
+                cost,
+                QueueEdgeSimpleData {
+                    id: e.id(),
+                    geometric_cost: geom_cost,
+                    optimum,
+                },
+            );
+        }
+    }
+
+    // Doing edge collapse after a certain point is very challenging, as a compromise,
+    // if we reach here and we need a smaller mesh, we will just delete faces, if anyone wants
+    // to try making an edge collapse that works no matter the situation you have my blessing.
+    while deleter.active_face_count() > config.target_face_count
+        && config.strategy == SimplificationStrategy::Aggressive
+    {
+        let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
+        if let Some(f) = face {
+            deleter.remove_face(f.id);
+        }
+    }
+
+    let res = deleter.end_deletion();
+    debug_assert!(correctness_state(&res) == RedgeCorrectness::Correct);
 
     (res, worst_cost)
 }
@@ -348,7 +524,7 @@ fn sync_wedge_and_redge<R: RedgeContainers, S: RealField>(
     }
 }
 
-struct QueueEdgeData<S> {
+struct QueueEdgeAttributeData<S> {
     id: EdgeId,
     geometric_cost: S,
     attributes: DVector<S>,
@@ -359,26 +535,46 @@ struct QueueEdgeData<S> {
     wedge_order: Vec<usize>,
 }
 
-impl<S> PartialEq for QueueEdgeData<S> {
+impl<S> PartialEq for QueueEdgeAttributeData<S> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl<S> Eq for QueueEdgeData<S> {}
+impl<S> Eq for QueueEdgeAttributeData<S> {}
 
-impl<S> Hash for QueueEdgeData<S> {
+impl<S> Hash for QueueEdgeAttributeData<S> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+struct QueueEdgeSimpleData<S> {
+    id: EdgeId,
+    geometric_cost: S,
+    optimum: Vector3<S>,
+}
+
+impl<S> PartialEq for QueueEdgeSimpleData<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<S> Eq for QueueEdgeSimpleData<S> {}
+
+impl<S> Hash for QueueEdgeSimpleData<S> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
 /// For each vertex, compute the quadrics of its incident faces.
-fn initialize_queue<S, R>(
+fn initialize_queue_with_attributes<S, R>(
     mesh: &Redge<R>,
     wedges: &WedgeDS<S>,
     attribute_count: usize,
-) -> PQueue<QueueEdgeData<S>, S>
+) -> PQueue<QueueEdgeAttributeData<S>, S>
 where
     R: RedgeContainers,
     S: FloatCore
@@ -395,12 +591,39 @@ where
             edge_cost_with_wedges(&edge, &wedges, attribute_count);
         queue.push(
             cost,
-            QueueEdgeData {
+            QueueEdgeAttributeData {
                 id: edge.id(),
                 geometric_cost: geom_cost,
                 attributes: optimum,
                 wedges_to_merge,
                 wedge_order,
+            },
+        );
+    }
+
+    queue
+}
+
+fn initialize_queue_without_attributes<S, R>(mesh: &Redge<R>) -> PQueue<QueueEdgeSimpleData<S>, S>
+where
+    R: RedgeContainers,
+    S: FloatCore
+        + RealField
+        + nalgebra::ComplexField
+        + Mul<VertData<R>, Output = VertData<R>>
+        + TotalOrder,
+    VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
+    FaceData<R>: FaceAttributeGetter<S>,
+{
+    let mut queue = PQueue::with_capacity(mesh.edge_count());
+    for edge in mesh.meta_edges() {
+        let (cost, geom_cost, optimum) = edge_cost_without_attributes(&edge);
+        queue.push(
+            cost,
+            QueueEdgeSimpleData {
+                id: edge.id(),
+                geometric_cost: geom_cost,
+                optimum,
             },
         );
     }
@@ -641,6 +864,251 @@ where
     )
 }
 
+fn edge_cost_without_attributes<'r, S, R: RedgeContainers>(
+    edge: &EdgeHandle<'r, R>,
+) -> (S, S, Vector3<S>)
+where
+    S: RealField + Mul<VertData<R>, Output = VertData<R>> + ComplexField,
+    VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
+    FaceData<R>: FaceAttributeGetter<S>,
+{
+    let edge_quadric = |edge: &EdgeHandle<'r, R>| {
+        // In non-manifold meshes, sometimes we generate weird edges that don't have incident faces.
+        // but they could still connect to full faces whose quadrics we must optimize.
+        let [f1, f2] = if edge.has_hedge() {
+            let f1 = edge.hedge().face().id();
+            let f2 = edge.hedge().radial_next().face().id();
+
+            [f1, f2]
+        } else {
+            [FaceId::ABSENT, FaceId::ABSENT]
+        };
+
+        let mut final_a = Matrix3::<S>::zeros();
+        let mut final_b = Vector3::<S>::zeros();
+        let mut final_c = S::zero();
+        for (_vert, face) in edge
+            .v1()
+            .incident_faces()
+            .map(|f| (edge.v1(), f))
+            .chain(edge.v2().incident_faces().map(|f| (edge.v2(), f)))
+            // Skip the two faces sharing the edge.
+            .filter(|f| f.1.id() != f1 && f.1.id() != f2)
+        {
+            let (a, b, c) = crate::wedge::face_geometric_quadric(&face);
+            let area = face.area();
+
+            final_a += a * area;
+            final_b += b * area;
+            final_c += c * area;
+        }
+
+        (final_a, final_b, final_c)
+    };
+
+    let (mut q, mut b, mut final_d) = edge_quadric(edge);
+
+    let mut add_phantom_plane =
+        |e: &EdgeHandle<'r, R>, q: &mut Matrix3<S>, b: &mut Vector3<S>, w: S| {
+            let n = e.hedge().face().unit_normal();
+            let e_dir = (e.v2().data().clone() - e.v1().data().clone()).normalized();
+            let constraint_normal = e_dir.cross(&n);
+
+            let n = nalgebra::Vector3::new(
+                constraint_normal[0],
+                constraint_normal[1],
+                constraint_normal[2],
+            );
+            let nn = n * n.transpose();
+            let p = e.v1().data().clone();
+            let p = nalgebra::Vector3::new(p[0], p[1], p[2]);
+            let d = -p.dot(&n);
+
+            *q += nn * w;
+            *b += n * d * w;
+            final_d += d * d * w;
+        };
+
+    // Add constraint planes for boundary edges.
+    if edge.is_boundary() && edge.has_hedge() {
+        // For each boundary edge that touches our active edge, we want
+        // the final point to approximate the original boundary conditions as much as possible.
+        // So add a phantom plane for each such edge, to nudge the final
+        // edge position towards the boundary.
+        let boundary_set: BTreeSet<_> = edge
+            .v1()
+            .star_edges()
+            .chain(edge.v2().star_edges())
+            .filter(|e| e.is_boundary() && e.has_hedge())
+            .map(|e| e.id())
+            .collect();
+        for eid in boundary_set {
+            add_phantom_plane(
+                &edge.redge.edge_handle(eid),
+                &mut q,
+                &mut b,
+                S::from(0.000001).unwrap(),
+            );
+        }
+    }
+
+    // When the edge is touching the boundary but it is not in it, we must be careful to
+    // not move the boundary.
+    let v1_is_fixed = edge.v1().is_in_boundary() && !edge.v2().is_in_boundary();
+    let v2_is_fixed = edge.v2().is_in_boundary() && !edge.v1().is_in_boundary();
+
+    let epsilon = 0.0001;
+    let mut solve = |q: &mut Matrix3<S>, b: &mut Vector3<S>| {
+        let det = q.determinant();
+
+        // Paolo Cignoni recommended that in cases where the quadrics are degenerate, we add
+        // ghost planes which are orthogonal to the edges surrounding the collapsing edge.
+        if det < S::from(epsilon).unwrap() {
+            for e in edge.v1().star_edges().chain(edge.v2().star_edges()) {
+                if !e.has_hedge() {
+                    continue;
+                }
+                // TODO: maybe this should be proportional to the BB of the mesh or the average edge length.
+                // instead of a cosntant value.
+                add_phantom_plane(&e, q, b, S::from(0.00000001).unwrap());
+            }
+        }
+        // Update the determinant.
+        let det = q.determinant();
+
+        // Safety check to prevent numerical problems when solving the system.
+        if Float::abs(det) <= S::from(epsilon).unwrap() || v1_is_fixed || v2_is_fixed {
+            return None;
+        }
+        if let Some(system) = q.clone().cholesky() {
+            Some(system.solve(&-b.clone()))
+        } else {
+            None
+        }
+    };
+
+    let (mut optimal, mut cost) = match solve(&mut q, &mut b) {
+        Some(optimal) => {
+            let cost = (optimal.transpose() * &q * &optimal
+                + b.transpose() * &optimal * S::from(2.).unwrap())[0]
+                + final_d;
+
+            // TODO: is this caused just by floating point issues, or do we have a bug?
+            let cost = cost.max(S::from(0.0).unwrap());
+
+            (optimal, cost)
+        }
+        // If we could not solve the prior system then we will cheat a little bit and solve an easier one.
+        None => {
+            let mut target =
+                (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap();
+
+            if v1_is_fixed {
+                target = edge.v1().data().clone();
+            }
+            if v2_is_fixed {
+                target = edge.v2().data().clone();
+            }
+            let mut res = Vector3::zeros();
+
+            // Penalize collapsing edges with larger numbers of incident wedges at their endpoints.
+            let is_boundary = edge.v1().is_in_boundary() || edge.v2().is_in_boundary();
+
+            res[0] = target[0];
+            res[1] = target[1];
+            res[2] = target[2];
+
+            let cost = (res.transpose() * &q * &res + b.transpose() * &res * S::from(2.).unwrap())
+                [0]
+                + final_d;
+            // TODO: Is this just numerical problems or are the above values not wll made?
+            let mut cost = S::from(0.).unwrap().max(cost);
+
+            if !cost.is_finite() {
+                cost = S::from(0.).unwrap();
+            }
+
+            (
+                res,
+                cost + S::from((is_boundary as u8 as f32 * 10.) * EDGE_WEIGHT_PENALTY).unwrap(),
+            )
+        }
+    };
+
+    // If the optimum is very far away from the midpoint, it's likely that we had numerical issues in our matrix.
+    // so set to the midpoint to be safe.
+    let p = Vector3::new(optimal[0], optimal[1], optimal[2]);
+
+    let mid = (edge.v1().data().clone() + edge.v2().data().clone()) * S::from(0.5).unwrap();
+    let mid = Vector3::new(mid[0], mid[1], mid[2]);
+    let v1 = edge.v1().data().clone();
+    let v1 = Vector3::new(v1[0], v1[1], v1[2]);
+    let v2 = edge.v2().data().clone();
+    let v2 = Vector3::new(v2[0], v2[1], v2[2]);
+    if (p - mid).norm() > (v1 - v2).norm() * S::from(4.).unwrap().real() {
+        optimal[0] = mid[0];
+        optimal[1] = mid[1];
+        optimal[2] = mid[2];
+
+        cost = (optimal.transpose() * &q * &optimal
+            + b.transpose() * &optimal * S::from(2.).unwrap())[0]
+            + final_d;
+        // TODO: is this caused just by floating point issues, or do we have a bug?
+        cost = cost.max(S::from(0.0).unwrap());
+
+        if !cost.is_finite() {
+            cost = S::from(0.).unwrap();
+        }
+    }
+
+    // See if any of the faces becomes degenerate (i.e. area of 0).
+    let f1 = if edge.has_hedge() {
+        edge.hedge().face().id()
+    } else {
+        FaceId::ABSENT
+    };
+    let f2 = if edge.has_hedge() {
+        edge.hedge().radial_next().face().id()
+    } else {
+        FaceId::ABSENT
+    };
+    for face in edge
+        .v1()
+        .incident_faces()
+        .filter(|f| f.id() != f1 && f.id() != f2)
+    {
+        let post_area = face_area_after(&face, edge.v1().id(), &p);
+        if post_area < S::from(f32::EPSILON * 10.).unwrap() {
+            cost += S::from(EDGE_WEIGHT_PENALTY * EDGE_WEIGHT_PENALTY).unwrap();
+        }
+    }
+    for face in edge
+        .v2()
+        .incident_faces()
+        .filter(|f| f.id() != f1 && f.id() != f2)
+    {
+        let post_area = face_area_after(&face, edge.v2().id(), &p);
+        if post_area < S::from(f32::EPSILON * 10.).unwrap() {
+            cost += S::from(EDGE_WEIGHT_PENALTY * EDGE_WEIGHT_PENALTY).unwrap();
+        }
+    }
+
+    let boundary_penalty = S::from(EDGE_WEIGHT_PENALTY).unwrap();
+    debug_assert!(cost.is_finite());
+    debug_assert!(cost >= S::from(0.).unwrap());
+
+    let boundary_test =
+        edge.is_boundary() || edge.v1().is_in_boundary() || edge.v2().is_in_boundary();
+    let geom_cost = (optimal.fixed_rows::<3>(0).transpose() * &q * &optimal.fixed_rows::<3>(0)
+        + b.transpose() * &optimal.fixed_rows::<3>(0) * S::from(2.).unwrap())[0]
+        + final_d;
+    (
+        cost + S::from(boundary_test as u8 as f32).unwrap() * boundary_penalty,
+        geom_cost,
+        optimal,
+    )
+}
+
 /// Test if an edge collapse would flip the direction of a face normal.
 fn collapse_would_flip_normal<'r, R, S>(edge: &EdgeHandle<'r, R>, new_pos: &VertData<R>) -> bool
 where
@@ -731,7 +1199,7 @@ mod tests {
             vertices,
             vertex_face_indices,
             ..
-        } = ObjData::from_disk_file("assets/stanford_dragon.obj");
+        } = ObjData::from_disk_file("assets/cheburashka.obj");
         // ObjData::from_disk_file("assets/loop_cube.obj");
 
         let vertices: Vec<_> = vertices
@@ -747,13 +1215,13 @@ mod tests {
                 .iter()
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
-
+        let target = redge.face_count() / 2;
         let (redge, _cost) = quadric_simplify(
             redge,
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Aggressive,
                 attribute_simplification: AttributeSimplification::NoAttributeSimplification,
-                target_face_count: 0,
+                target_face_count: target,
             },
             |_, _| false,
         );
@@ -784,13 +1252,14 @@ mod tests {
                 .map(|f| f.iter().map(|&i| i as usize)),
         );
 
+        let target = redge.face_count() / 10;
         let start = Instant::now();
         let (redge, _cost) = quadric_simplify(
             redge,
             QuadricSimplificationConfig {
-                strategy: SimplificationStrategy::Aggressive,
+                strategy: SimplificationStrategy::Conservative,
                 attribute_simplification: AttributeSimplification::NoAttributeSimplification,
-                target_face_count: 0,
+                target_face_count: target,
             },
             |_, _| false,
         );

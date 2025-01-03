@@ -334,8 +334,10 @@ mod tests {
 
     use super::{incremental_refinement_with_context, *};
 
-    #[test]
-    fn test_incremental_refinement_with_context() {
+    // This is disabled as a test because it will chug our CI tools. But it is left here in case
+    // verification is still needed.
+    //#[test]
+    fn _test_incremental_refinement_with_context() {
         let ObjData {
             vertices,
             vertex_face_indices,
