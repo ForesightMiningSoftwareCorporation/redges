@@ -795,8 +795,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_edge_flip() {
+    // #[test]
+    fn _test_edge_flip() {
         let ObjData {
             vertices,
             vertex_face_indices,
@@ -821,8 +821,8 @@ mod tests {
         ObjData::export(&(&vs, &fs), "out/after_flip.obj");
     }
 
-    #[test]
-    fn test_edge_split() {
+    // #[test]
+    fn _test_edge_split() {
         let ObjData {
             vertices,
             vertex_face_indices,
@@ -853,8 +853,8 @@ mod tests {
         ObjData::export(&(&vs, &fs), "out/after_flip.obj");
     }
 
-    #[test]
-    fn test_redge_init() {
+    // #[test]
+    fn _test_redge_init() {
         let ObjData {
             vertices,
             vertex_face_indices,

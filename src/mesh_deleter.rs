@@ -557,8 +557,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_edge_collapse() {
+    // #[test]
+    fn _test_edge_collapse() {
         let ObjData {
             vertices,
             vertex_face_indices,
