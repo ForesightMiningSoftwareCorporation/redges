@@ -312,7 +312,11 @@ impl<R: RedgeContainers> Redge<R> {
     }
 
     pub fn edge_handle(&self, id: EdgeId) -> EdgeHandle<'_, R> {
-        assert!(id.to_index() < self.edges_meta.len());
+        assert!(
+            id.to_index() < self.edges_meta.len(),
+            "Edge {:?} is outside bounds.",
+            id
+        );
         EdgeHandle::new(id, self)
     }
 
