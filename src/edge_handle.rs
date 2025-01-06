@@ -1,13 +1,13 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 use crate::container_trait::{EdgeData, RedgeContainers, VertData};
 use crate::hedge_handle::HedgeHandle;
 use crate::vert_handle::VertHandle;
 
+use crate::HedgeId;
 use crate::{
     container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, Redge, StarCycleNode, VertId,
 };
-use crate::{HedgeId, ABSENT};
 
 pub struct EdgeHandle<'r, R: RedgeContainers> {
     id: EdgeId,
@@ -84,7 +84,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
             EdgeVertexType::V1 => self.metadata().v1_cycle.clone(),
             EdgeVertexType::V2 => self.metadata().v2_cycle.clone(),
             EdgeVertexType::NotInEdge => panic!(
-                "Vertex id {:?} not part of edge with id {:?} and pointing to {:?}.",
+                "Vertex id {:?} not part of edge with id {:?}. That edge points to {:?}.",
                 vert_id,
                 self.id,
                 self.vertex_ids(),

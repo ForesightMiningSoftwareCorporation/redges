@@ -1,11 +1,7 @@
-use core::f32;
-use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
-    usize,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use linear_isomorphic::{InnerSpace, RealField};
-use nalgebra::{ComplexField, DMatrix, DVector, Matrix4, Vector4};
+use nalgebra::{ComplexField, DMatrix, DVector, Vector4};
 
 use crate::{
     container_trait::{
@@ -13,8 +9,8 @@ use crate::{
     },
     edge_handle::EdgeHandle,
     face_handle::{FaceHandle, FaceMetrics},
-    vert_handle::{self, VertHandle},
-    FaceId, VertId, ABSENT,
+    vert_handle::VertHandle,
+    FaceId, VertId,
 };
 
 #[derive(Debug, Clone)]
@@ -29,6 +25,22 @@ pub struct WedgeDS<S: RealField> {
     pub(crate) faces: BTreeMap<FaceId, BTreeMap<VertId, usize>>,
 }
 
+impl<S: RealField> Default for WedgeDS<S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+type WedgeQuadricOutput<S> = (
+    DMatrix<S>,
+    DVector<S>,
+    S,
+    DMatrix<S>,
+    DVector<S>,
+    S,
+    Vec<(usize, usize)>,
+    Vec<usize>,
+);
 impl<S: RealField> WedgeDS<S> {
     pub fn new() -> Self {
         Self {
@@ -39,15 +51,12 @@ impl<S: RealField> WedgeDS<S> {
 
     pub fn wedge_from_corner(&self, vert_id: VertId, face_id: FaceId) -> Option<Wedge<S>> {
         let list = self.faces.get(&face_id);
-        if list.is_none() {
-            return None;
-        }
+        list?;
+
         let list = list.unwrap();
 
         let wid = list.get(&vert_id);
-        if wid.is_none() {
-            return None;
-        }
+        wid?;
 
         let wid = *wid.unwrap();
 
@@ -56,26 +65,19 @@ impl<S: RealField> WedgeDS<S> {
 
     pub fn wedge_id_from_corner(&self, vert_id: VertId, face_id: FaceId) -> Option<usize> {
         let list = self.faces.get(&face_id);
-        if list.is_none() {
-            return None;
-        }
+        list?;
         let list = list.unwrap();
 
         let wid = list.get(&vert_id);
-        if wid.is_none() {
-            return None;
-        }
 
-        let wid = *wid.unwrap();
-
-        Some(wid)
+        wid.copied()
     }
 
-    pub fn wedge_quadric<'r, R>(
+    pub fn wedge_quadric<R>(
         &self,
-        edge: &EdgeHandle<'r, R>,
+        edge: &EdgeHandle<R>,
         attribute_count: usize,
-    ) -> (DMatrix<S>, DVector<S>, S, Vec<(usize, usize)>, Vec<usize>)
+    ) -> WedgeQuadricOutput<S>
     where
         R: RedgeContainers,
         VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
@@ -105,11 +107,11 @@ impl<S: RealField> WedgeDS<S> {
             // Skip the two faces sharing the edge.
             .filter(|f| f.1.id() != f1 && f.1.id() != f2)
         {
-            let wid = self.wedge_id_from_corner(vert.id(), face.id()).unwrap();
+            let (a, b, c) = face_geometric_quadric(&face);
 
+            let wid = self.wedge_id_from_corner(vert.id(), face.id()).unwrap();
             let data = wedges.entry(wid).or_insert(Vec::new());
 
-            let (a, b, c) = face_geometric_quadric(&face);
             let gradients = face_attribute_gradients(&face);
             let area = face.area();
 
@@ -121,20 +123,18 @@ impl<S: RealField> WedgeDS<S> {
 
         let mut wedges_to_merge = Vec::new();
         // For each set of wedges that extend into the faces that will be deleted, merge them.
-        for candidates in merging_candidates {
-            if let Some((w1, w2)) = candidates {
-                // We probaly merged this wedge in a prior iteration.
-                if !wedges.contains_key(&w1) || !wedges.contains_key(&w2) {
-                    continue;
-                }
-                // Move all data of wedge w2 into wedge w1, thus merging them.
-                let wedges2 = wedges.get(&w2).unwrap().clone();
-                let wedges1 = wedges.get_mut(&w1).unwrap();
-                wedges1.extend(wedges2);
-                wedges.remove(&w2);
-
-                wedges_to_merge.push((w1, w2));
+        for (w1, w2) in merging_candidates.into_iter().flatten() {
+            // We probaly merged this wedge in a prior iteration.
+            if !wedges.contains_key(&w1) || !wedges.contains_key(&w2) {
+                continue;
             }
+            // Move all data of wedge w2 into wedge w1, thus merging them.
+            let wedges2 = wedges.get(&w2).unwrap().clone();
+            let wedges1 = wedges.get_mut(&w1).unwrap();
+            wedges1.extend(wedges2);
+            wedges.remove(&w2);
+
+            wedges_to_merge.push((w1, w2));
         }
 
         let wedge_count = wedges.len();
@@ -143,6 +143,10 @@ impl<S: RealField> WedgeDS<S> {
         let mut q = DMatrix::zeros(dimension, dimension);
         let mut final_b = DVector::zeros(dimension);
         let mut final_d = S::from(0.).unwrap();
+
+        let mut geom_q = DMatrix::zeros(3, 3);
+        let mut geom_b = DVector::zeros(3);
+        let mut geom_d = S::from(0.).unwrap();
 
         // For each wedge, add its geometric component to the top left matrix.
         let mut wedge_order = Vec::new();
@@ -154,10 +158,14 @@ impl<S: RealField> WedgeDS<S> {
 
                 let mut top_left = q.view_mut((0, 0), (3, 3));
                 top_left += a * area;
+                geom_q += a * area;
+
                 let mut top_three = final_b.rows_mut(0, 3);
                 top_three += b * area;
+                geom_b += b * area;
 
                 final_d += c * area;
+                geom_d += c * area;
 
                 // Add the attribute information of this wedge to each section independently.
                 // That is, each face contributes to the top left matrix and top three rows of the b vector.
@@ -188,13 +196,19 @@ impl<S: RealField> WedgeDS<S> {
             }
         }
 
-        (q, final_b, final_d, wedges_to_merge, wedge_order)
+        (
+            q,
+            final_b,
+            final_d,
+            geom_q,
+            geom_b,
+            geom_d,
+            wedges_to_merge,
+            wedge_order,
+        )
     }
 
-    pub fn test_wedge_extensions<'r, R>(
-        &self,
-        edge: &EdgeHandle<'r, R>,
-    ) -> [Option<(usize, usize)>; 2]
+    pub fn test_wedge_extensions<R>(&self, edge: &EdgeHandle<R>) -> [Option<(usize, usize)>; 2]
     where
         R: RedgeContainers,
         VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
@@ -259,12 +273,72 @@ impl<S: RealField> WedgeDS<S> {
         result
     }
 
-    pub fn collapse_wedge<'r, R>(
+    // TODO: experimental and untested.
+    /// Warning: untested.
+    pub fn test_wedge_extensions_non_manifold<R>(&self, edge: &EdgeHandle<R>) -> Vec<Vec<usize>>
+    where
+        R: RedgeContainers,
+        VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
+        FaceData<R>: FaceAttributeGetter<S>,
+        S: ComplexField,
+    {
+        if !edge.has_hedge() {
+            return Vec::new();
+        }
+
+        let mut result = Vec::new();
+        for h in edge.hedge().radial_loop() {
+            let h_prev = h.face_prev();
+            let h_next = h.face_next();
+            let fid = h.face().id();
+
+            let wid1 = self.wedge_id_from_corner(h.source().id(), fid).unwrap();
+            let wid2 = self.wedge_id_from_corner(h.dest().id(), fid).unwrap();
+
+            let mut merge_group_1 = Vec::new();
+            for face in h_prev
+                .radial_loop()
+                .map(|h| h.face())
+                .filter(|f| f.id() != fid)
+            {
+                let wid = self
+                    .wedge_id_from_corner(h.source().id(), face.id())
+                    .unwrap();
+                if wid == wid1 {
+                    merge_group_1.push(wid);
+                }
+            }
+
+            let mut merge_group_2 = Vec::new();
+            for face in h_next
+                .radial_loop()
+                .map(|h| h.face())
+                .filter(|f| f.id() != fid)
+            {
+                let wid = self.wedge_id_from_corner(h.dest().id(), face.id()).unwrap();
+                if wid == wid2 {
+                    merge_group_2.push(wid);
+                }
+            }
+
+            if !merge_group_1.is_empty() {
+                result.push(merge_group_1);
+            }
+
+            if !merge_group_2.is_empty() {
+                result.push(merge_group_2);
+            }
+        }
+
+        result
+    }
+
+    pub fn collapse_wedge<R>(
         &mut self,
         optimum: &DVector<S>,
-        edge: &EdgeHandle<'r, R>,
+        edge: &EdgeHandle<R>,
         wedges_to_merge: &Vec<(usize, usize)>,
-        wedge_order: &Vec<usize>,
+        wedge_order: &[usize],
         attribute_count: usize,
     ) where
         R: RedgeContainers,
@@ -298,16 +372,17 @@ impl<S: RealField> WedgeDS<S> {
         }
 
         // Update the values assigned to the wedge, be careful to follow the order returned by the edge cost function.
-        for i in 0..wedge_order.len() {
+        for (i, wid) in wedge_order.iter().enumerate() {
             let offset = 3 + i * attribute_count;
-            let wedge = &mut self.wedges[wedge_order[i]];
+            let wedge = &mut self.wedges[*wid];
             for j in 0..attribute_count {
                 wedge.attributes[j] = optimum[offset + j];
             }
         }
     }
 
-    pub fn insert_face_attributes<'r, R>(&mut self, face: FaceHandle<R>)
+    // TODO: This assumes manifold opology.
+    pub fn insert_face_attributes<R>(&mut self, face: FaceHandle<R>)
     where
         R: RedgeContainers,
         VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
@@ -316,6 +391,10 @@ impl<S: RealField> WedgeDS<S> {
     {
         for vert_handle in face.vertices() {
             let n = face.data().attribute_count();
+            if n == 0 {
+                break;
+            }
+
             let mut attribute = DVector::zeros(n);
             let vindex = face.data().inner_index(vert_handle.id());
             for i in 0..n {
@@ -339,10 +418,9 @@ impl<S: RealField> WedgeDS<S> {
 
             // See if the attribute of the prev face is contiguous with my attribute.
             let mut prev_wid = usize::MAX;
-            let mut prev_attrib = DVector::default();
             if let Some(face_list) = self.faces.get(&f_prev.id()) {
                 if let Some(wid) = face_list.get(&vert_handle.id()) {
-                    prev_attrib = self.wedges[*wid].attributes.clone();
+                    let prev_attrib = self.wedges[*wid].attributes.clone();
                     let d = (&attribute - &prev_attrib).norm();
 
                     if S::from_real(d) < S::from(0.0001).unwrap() {
@@ -353,10 +431,9 @@ impl<S: RealField> WedgeDS<S> {
 
             // See if the attribute of the next face is contiguous with my attribute.
             let mut next_wid = usize::MAX;
-            let mut next_attrib = DVector::default();
             if let Some(face_list) = self.faces.get(&f_next.id()) {
                 if let Some(wid) = face_list.get(&vert_handle.id()) {
-                    next_attrib = self.wedges[*wid].attributes.clone();
+                    let next_attrib = self.wedges[*wid].attributes.clone();
                     let d = (&attribute - &next_attrib).norm();
 
                     if S::from_real(d) < S::from(0.0001).unwrap() {
@@ -417,7 +494,7 @@ impl<S: RealField> WedgeDS<S> {
         }
     }
 
-    pub fn vertex_wedges<'r, R>(&self, vert: &VertHandle<'r, R>) -> BTreeSet<usize>
+    pub fn vertex_wedges<R>(&self, vert: &VertHandle<R>) -> BTreeSet<usize>
     where
         R: RedgeContainers,
         VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
@@ -435,8 +512,8 @@ impl<S: RealField> WedgeDS<S> {
     }
 }
 
-fn face_geometric_quadric<'r, R: RedgeContainers, S>(
-    face: &FaceHandle<'r, R>,
+pub fn face_geometric_quadric<R: RedgeContainers, S>(
+    face: &FaceHandle<R>,
 ) -> (nalgebra::Matrix3<S>, nalgebra::Vector3<S>, S)
 where
     S: RealField + ComplexField,
@@ -462,8 +539,8 @@ where
     (n * n.transpose(), n * d, d * d)
 }
 
-fn face_attribute_gradients<'r, R: RedgeContainers, S>(
-    face: &FaceHandle<'r, R>,
+fn face_attribute_gradients<R: RedgeContainers, S>(
+    face: &FaceHandle<R>,
 ) -> Vec<(nalgebra::Vector3<S>, S)>
 where
     S: RealField + ComplexField,
@@ -501,9 +578,9 @@ where
         DVector::zeros(face_attribute_count),
         DVector::zeros(face_attribute_count),
     ];
-    for i in 0..3 {
+    for (i, face_attrib) in face_attribs.iter_mut().enumerate() {
         for k in 0..face_attribute_count {
-            face_attribs[i][k] = face.data().attribute(i, k);
+            face_attrib[k] = face.data().attribute(i, k);
         }
     }
 
@@ -517,7 +594,7 @@ where
     gradients
 }
 
-fn attribute_gradient<'r, S>(
+fn attribute_gradient<S>(
     positions: &[[S; 3]],
     normal: &nalgebra::Vector3<S>,
     attributes: &[DVector<S>; 3],
@@ -551,9 +628,9 @@ where
 
     if let Some(inv) = mat.try_inverse() {
         let res = inv * b;
-        return (res.fixed_rows::<3>(0).into(), res[3]);
+        (res.fixed_rows::<3>(0).into(), res[3])
     } else {
         // This is a hack. There are better ways to get a value from an undetermined system, however.
-        return (nalgebra::Vector3::default(), S::from(1.0).unwrap());
-    };
+        (nalgebra::Vector3::default(), S::from(1.0).unwrap())
+    }
 }

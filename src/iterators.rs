@@ -17,7 +17,7 @@ impl<'r, R: RedgeContainers> VertexStarVerticesIter<'r, R> {
         VertexStarVerticesIter {
             focused_vertex: vert_id,
             iterator: VertexStarEdgesIter::new(vert_id, redge),
-            redge: redge,
+            redge,
         }
     }
 }
@@ -50,7 +50,7 @@ impl<'r, R: RedgeContainers> VertexStarEdgesIter<'r, R> {
             focused_vertex: vert_id,
             start_edge: redge.verts_meta[vert_id.to_index()].edge_id,
             current_edge: redge.verts_meta[vert_id.to_index()].edge_id,
-            redge: redge,
+            redge,
             start: true,
         }
     }
@@ -120,9 +120,7 @@ impl<'r, R: RedgeContainers> Iterator for VertexLinkEdgesIter<'r, R> {
         // If the orbit is exhausted, move to the next edge in the star.
         loop {
             let next = self.edge_iter.next();
-            if next.is_none() {
-                return None;
-            }
+            next.as_ref()?;
 
             let next = next.unwrap();
             if !next.has_hedge() {
@@ -226,9 +224,8 @@ impl<'r, R: RedgeContainers> Iterator for VertManifoldIncidentFacesIterator<'r, 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let edge = self.edge_iter.next();
-            if edge.is_none() {
-                return None;
-            }
+            edge.as_ref()?;
+
             let edge = edge.unwrap();
 
             if let Some(fid) = edge

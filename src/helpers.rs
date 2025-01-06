@@ -1,16 +1,11 @@
 //! WARNING: These functions can and will break invariants of the Redge
 //! use with extreme care.
 
-use std::{
-    collections::{BTreeSet, HashSet},
-    ops::Mul,
-};
-
-use linear_isomorphic::{InnerSpace, RealField, VectorSpace};
+use std::collections::BTreeSet;
 
 use crate::{
-    container_trait::{RedgeContainers, VertData},
-    EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode, VertId,
+    container_trait::RedgeContainers, EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode,
+    VertId,
 };
 
 pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(

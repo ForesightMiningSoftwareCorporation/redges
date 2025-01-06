@@ -2,12 +2,12 @@ use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::io::Write;
 use std::io::{BufRead, BufReader};
-use std::ops::{AddAssign, Index};
+use std::ops::AddAssign;
 
-use linear_isomorphic::prelude::*;
+use linear_isomorphic::*;
 
-type Vec3 = [f32; 3];
-type Vec2 = [f32; 2];
+type Vec3 = nalgebra::Vector3<f32>;
+type Vec2 = nalgebra::Vector2<f32>;
 
 #[derive(Debug)]
 pub struct ObjData {
@@ -33,7 +33,7 @@ pub struct ObjectRanges {
 
 impl ObjData {
     pub fn from_disk_file(path: &str) -> Self {
-        let file = File::open(path).expect(&format!("Cannot find {}.", path));
+        let file = File::open(path).unwrap();
         let reader = BufReader::new(file);
 
         let mut vert_topology = Vec::<Vec<u64>>::new();
@@ -191,7 +191,7 @@ impl ObjData {
 }
 
 pub trait WaveFrontCompatible<'a> {
-    type Scalar: num_traits::Float + Debug + Display;
+    type Scalar: num_traits::Float + Debug + AddAssign + Display;
 
     fn pos_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]>;
     fn uv_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 2]>;
@@ -207,15 +207,15 @@ impl<'a> WaveFrontCompatible<'a> for ObjData {
     type Scalar = f32;
 
     fn pos_iterator(&'a self) -> impl Iterator<Item = [f32; 3]> {
-        self.vertices.iter().map(|v| [v[0], v[1], v[2]])
+        self.vertices.iter().map(|v| [v.x, v.y, v.z])
     }
 
     fn uv_iterator(&'a self) -> impl Iterator<Item = [f32; 2]> {
-        self.uvs.iter().map(|v| [v[0], v[1]])
+        self.uvs.iter().map(|v| [v.x, v.y])
     }
 
     fn norm_iterator(&'a self) -> impl Iterator<Item = [f32; 3]> {
-        self.normals.iter().map(|v| [v[0], v[1], v[2]])
+        self.normals.iter().map(|v| [v.x, v.y, v.z])
     }
 
     fn segment_iterator(&'a self) -> impl Iterator<Item = [usize; 2]> {
@@ -243,8 +243,8 @@ impl<'a> WaveFrontCompatible<'a> for ObjData {
 
 impl<'a, V, S> WaveFrontCompatible<'a> for Vec<V>
 where
-    V: Index<usize, Output = S>,
-    S: num_traits::Float + Display + Debug,
+    V: VectorSpace<Scalar = S>,
+    S: num_traits::Float + AddAssign + Display + Debug,
 {
     type Scalar = S;
 
@@ -282,8 +282,47 @@ where
 
 impl<'a, V, S> WaveFrontCompatible<'a> for (&Vec<V>, &Vec<usize>)
 where
-    V: Index<usize, Output = S>,
-    S: num_traits::Float + Display + Debug,
+    V: VectorSpace<Scalar = S>,
+    S: num_traits::Float + AddAssign + Display + Debug,
+{
+    type Scalar = S;
+
+    fn pos_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]> {
+        self.0.iter().map(|v| [v[0], v[1], v[2]])
+    }
+
+    fn uv_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 2]> {
+        std::iter::empty()
+    }
+
+    fn norm_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]> {
+        std::iter::empty()
+    }
+
+    fn segment_iterator(&'a self) -> impl Iterator<Item = [usize; 2]> {
+        std::iter::empty()
+    }
+
+    fn pos_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        debug_assert!(self.1.len() % 3 == 0);
+        self.1.chunks(3).map(|chunk| chunk.iter().copied())
+    }
+
+    fn uv_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        let empty_iterator: std::iter::Empty<std::iter::Empty<usize>> = std::iter::empty();
+        empty_iterator
+    }
+
+    fn norm_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        let empty_iterator: std::iter::Empty<std::iter::Empty<usize>> = std::iter::empty();
+        empty_iterator
+    }
+}
+
+impl<'a, V, S> WaveFrontCompatible<'a> for (Vec<V>, Vec<usize>)
+where
+    V: VectorSpace<Scalar = S>,
+    S: num_traits::Float + AddAssign + Display + Debug,
 {
     type Scalar = S;
 
@@ -321,8 +360,51 @@ where
 
 impl<'a, V, S, I> WaveFrontCompatible<'a> for (&Vec<V>, &Vec<Vec<I>>)
 where
-    V: Index<usize, Output = S>,
-    S: num_traits::Float + Display + Debug,
+    V: VectorSpace<Scalar = S>,
+    S: num_traits::Float + AddAssign + Display + Debug,
+    usize: TryFrom<I>,
+    I: num_traits::PrimInt + std::fmt::Display,
+{
+    type Scalar = S;
+
+    fn pos_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]> {
+        self.0.iter().map(|v| [v[0], v[1], v[2]])
+    }
+
+    fn uv_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 2]> {
+        std::iter::empty()
+    }
+
+    fn norm_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]> {
+        std::iter::empty()
+    }
+
+    fn segment_iterator(&'a self) -> impl Iterator<Item = [usize; 2]> {
+        std::iter::empty()
+    }
+
+    fn pos_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        self.1.iter().map(|face| {
+            face.iter()
+                .map(|i| usize::try_from(*i).unwrap_or(usize::MAX))
+        })
+    }
+
+    fn uv_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        let empty_iterator: std::iter::Empty<std::iter::Empty<usize>> = std::iter::empty();
+        empty_iterator
+    }
+
+    fn norm_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        let empty_iterator: std::iter::Empty<std::iter::Empty<usize>> = std::iter::empty();
+        empty_iterator
+    }
+}
+
+impl<'a, V, S, I> WaveFrontCompatible<'a> for (Vec<V>, Vec<Vec<I>>)
+where
+    V: VectorSpace<Scalar = S>,
+    S: num_traits::Float + AddAssign + Display + Debug,
     usize: TryFrom<I>,
     I: num_traits::PrimInt + std::fmt::Display,
 {
@@ -365,7 +447,53 @@ where
 impl<'a, V, S, I> WaveFrontCompatible<'a> for (&Vec<V>, &Vec<[I; 2]>)
 where
     V: VectorSpace<Scalar = S>,
-    S: num_traits::Float + Display + Debug,
+    S: num_traits::Float + AddAssign + Display + Debug,
+    usize: TryFrom<I>,
+    I: num_traits::PrimInt + Display,
+{
+    type Scalar = S;
+
+    fn pos_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]> {
+        self.0.iter().map(|v| [v[0], v[1], v[2]])
+    }
+
+    fn uv_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 2]> {
+        std::iter::empty()
+    }
+
+    fn norm_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]> {
+        std::iter::empty()
+    }
+
+    fn segment_iterator(&'a self) -> impl Iterator<Item = [usize; 2]> {
+        self.1.iter().map(|[i, j]| {
+            [
+                usize::try_from(*i).unwrap_or(usize::MAX),
+                usize::try_from(*j).unwrap_or(usize::MAX),
+            ]
+        })
+    }
+
+    fn pos_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        let empty_iterator: std::iter::Empty<std::iter::Empty<usize>> = std::iter::empty();
+        empty_iterator
+    }
+
+    fn uv_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        let empty_iterator: std::iter::Empty<std::iter::Empty<usize>> = std::iter::empty();
+        empty_iterator
+    }
+
+    fn norm_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>> {
+        let empty_iterator: std::iter::Empty<std::iter::Empty<usize>> = std::iter::empty();
+        empty_iterator
+    }
+}
+
+impl<'a, V, S, I> WaveFrontCompatible<'a> for (Vec<V>, Vec<[I; 2]>)
+where
+    V: VectorSpace<Scalar = S>,
+    S: num_traits::Float + AddAssign + Display + Debug,
     usize: TryFrom<I>,
     I: num_traits::PrimInt + Display,
 {
@@ -409,19 +537,19 @@ where
 }
 
 fn add_vec_3d(tokens: &[&str], vecs: &mut Vec<Vec3>) {
-    let vec = [
+    let vec = Vec3::new(
         tokens[0].parse::<f32>().unwrap(),
         tokens[1].parse::<f32>().unwrap(),
         tokens[2].parse::<f32>().unwrap(),
-    ];
+    );
     vecs.push(vec);
 }
 
 fn add_vec_2d(tokens: &[&str], vecs: &mut Vec<Vec2>) {
-    let vec = [
+    let vec = Vec2::new(
         tokens[0].parse::<f32>().unwrap(),
         tokens[1].parse::<f32>().unwrap(),
-    ];
+    );
     vecs.push(vec);
 }
 
@@ -451,7 +579,7 @@ fn add_face(
     for token in tokens {
         let inner_tokens = token.split("/").collect::<Vec<&str>>();
 
-        assert!(inner_tokens.len() <= 3 && inner_tokens.len() >= 1);
+        assert!(inner_tokens.len() <= 3 && !inner_tokens.is_empty());
 
         vert_topology
             .last_mut()
