@@ -125,7 +125,7 @@ where
     fn centroid(&self) -> V;
 }
 
-impl<'r, R: RedgeContainers, S> FaceMetrics<VertData<R>, VertData<R>, S> for FaceHandle<'r, R>
+impl<'r, R: RedgeContainers, S> FaceMetrics<VertData<R>, VertData<R>, S> for FaceHandle<'_, R>
 where
     VertData<R>: InnerSpace<S>,
     S: RealField,
