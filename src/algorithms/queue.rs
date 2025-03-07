@@ -18,11 +18,11 @@ where
     T: Eq + Hash,
     W: ordered_float::FloatCore,
 {
-    pub fn new() -> Self {
-        PQueue {
-            queue: PriorityQueue::new(),
-        }
-    }
+    // pub fn new() -> Self {
+    //     PQueue {
+    //         queue: PriorityQueue::new(),
+    //     }
+    // }
 
     pub fn with_capacity(capacity: usize) -> Self {
         PQueue {
@@ -30,20 +30,20 @@ where
         }
     }
 
-    pub fn from_iter<I>(iter: I) -> Self
-    where
-        I: Iterator<Item = (T, W)>,
-    {
-        let mut res = PQueue {
-            queue: PriorityQueue::new(),
-        };
+    // pub fn from_iter<I>(iter: I) -> Self
+    // where
+    //     I: Iterator<Item = (T, W)>,
+    // {
+    //     let mut res = PQueue {
+    //         queue: PriorityQueue::new(),
+    //     };
 
-        for (item, weight) in iter {
-            res.push(-weight, item);
-        }
+    //     for (item, weight) in iter {
+    //         res.push(-weight, item);
+    //     }
 
-        res
-    }
+    //     res
+    // }
 
     pub fn push(&mut self, weight: W, item: T) -> Option<OrderedFloat<W>> {
         self.queue.push(item, OrderedFloat(-weight))
@@ -58,30 +58,27 @@ where
     }
 
     pub fn remove(&mut self, item: T) -> Option<(T, W)> {
-        match self.queue.remove(&item) {
-            None => None,
-            Some((i, OrderedFloat(w))) => Some((i, w)),
-        }
+        self.queue.remove(&item).map(|(i, OrderedFloat(w))| (i, w))
     }
 
-    pub fn contains(&self, item: &T) -> bool {
-        self.queue.get(item).is_some()
-    }
+    // pub fn contains(&self, item: &T) -> bool {
+    //     self.queue.get(item).is_some()
+    // }
 
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
 
-    pub fn len(&self) -> usize {
-        self.queue.len()
-    }
+    // pub fn len(&self) -> usize {
+    //     self.queue.len()
+    // }
 
-    pub fn iter(&self) -> impl Iterator<Item = (T, W)> + '_
-    where
-        T: Clone,
-    {
-        self.queue
-            .iter()
-            .map(|(item, ord_weight)| (item.clone(), ord_weight.0))
-    }
+    // pub fn iter(&self) -> impl Iterator<Item = (T, W)> + '_
+    // where
+    //     T: Clone,
+    // {
+    //     self.queue
+    //         .iter()
+    //         .map(|(item, ord_weight)| (item.clone(), ord_weight.0))
+    // }
 }

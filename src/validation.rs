@@ -6,14 +6,12 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
-    iter,
     marker::PhantomData,
 };
 
 use linear_isomorphic::{InnerSpace, RealField};
 use num::{Bounded, Signed};
-use num_traits::real::Real;
-use rstar::{Point, RTree};
+use rstar::RTree;
 
 use crate::{
     container_trait::{PrimitiveContainer, RedgeContainers, VertData},
@@ -61,6 +59,7 @@ pub enum HedgeCorrectness {
     FaceLoopChainIsBroken,
     RadialChainIsBroken,
     SourceIsAbsent,
+    EdgeIsAbsent,
     LongRadialChain,
 }
 
@@ -68,11 +67,10 @@ pub enum HedgeCorrectness {
 // If the above condition is found to be false ping Makogan and tell him
 // to fix asap.
 pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectness {
-    if mesh.vert_data.len() != mesh.verts_meta.len() {
-        return RedgeCorrectness::MismatchingArrayLengths;
-    } else if mesh.edge_data.len() != mesh.edges_meta.len() && mesh.edge_data.len() != 0 {
-        return RedgeCorrectness::MismatchingArrayLengths;
-    } else if mesh.face_data.len() != mesh.faces_meta.len() && mesh.face_data.len() != 0 {
+    if mesh.vert_data.len() != mesh.verts_meta.len()
+        || mesh.edge_data.len() != mesh.edges_meta.len() && mesh.edge_data.len() != 0
+        || mesh.face_data.len() != mesh.faces_meta.len() && mesh.face_data.len() != 0
+    {
         return RedgeCorrectness::MismatchingArrayLengths;
     }
 
@@ -231,20 +229,31 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         if hedge.id.to_index() != i {
             return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::IdAndIndexMismatch);
         }
-        if hedge.face_next_id.is_absent() {
+        if hedge.face_next_id.is_absent()
+            || !mesh.hedges_meta[hedge.face_next_id.to_index()].is_active
+        {
             return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::FaceLoopChainIsBroken);
         }
-        if hedge.face_prev_id.is_absent() {
+        if hedge.face_prev_id.is_absent()
+            || !mesh.hedges_meta[hedge.face_prev_id.to_index()].is_active
+        {
             return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::FaceLoopChainIsBroken);
         }
-        if hedge.radial_next_id.is_absent() {
+        if hedge.radial_next_id.is_absent()
+            || !mesh.hedges_meta[hedge.radial_next_id.to_index()].is_active
+        {
             return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::RadialChainIsBroken);
         }
-        if hedge.radial_prev_id.is_absent() {
+        if hedge.radial_prev_id.is_absent()
+            || !mesh.hedges_meta[hedge.radial_prev_id.to_index()].is_active
+        {
             return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::RadialChainIsBroken);
         }
-        if hedge.source_id.is_absent() {
-            return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::SourceIsAbsent);
+        if hedge.source_id.is_absent() || !mesh.verts_meta[hedge.source_id.to_index()].is_active {
+            return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::EdgeIsAbsent);
+        }
+        if hedge.edge_id.is_absent() || !mesh.edges_meta[hedge.edge_id.to_index()].is_active {
+            return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::EdgeIsAbsent);
         }
 
         let mut current = hedge.id;
@@ -298,6 +307,29 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
 
     if let Some((v, s1, s2)) = check_edge_vertex_cycles(mesh) {
         return RedgeCorrectness::VertexCyclesDontMatch(v, s1, s2);
+    }
+
+    // Verify that iterating through the radial orbit of a edge yields the same number as the total
+    // faces that point to that edge.
+    let mut edge_face_references = vec![0; mesh.edge_count()];
+    // Each face marks all edges it sees (thus increments the expected number of counters by 1).
+    for face in &mesh.faces_meta {
+        if !face.is_active {
+            continue;
+        }
+        let handle = mesh.face_handle(face.id);
+        for h in handle.hedge().face_loop() {
+            edge_face_references[h.edge().id().to_index()] += 1;
+        }
+    }
+    // Each radial orbit better see as many faces as the prior loop counted.
+    for edge in mesh.meta_edges() {
+        if !edge.has_hedge() {
+            continue;
+        }
+
+        let radial_count = edge.hedge().radial_loop().count();
+        assert!(radial_count == edge_face_references[edge.id().to_index()]);
     }
 
     RedgeCorrectness::Correct
@@ -416,10 +448,6 @@ impl<V: Debug + InnerSpace<S>, S: RealField> PartialEq for TreePoint<V, S> {
         self.point[0] == other.point[0]
             && self.point[1] == other.point[1]
             && self.point[2] == other.point[2]
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        !self.eq(other)
     }
 }
 

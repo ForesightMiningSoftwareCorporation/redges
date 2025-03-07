@@ -1,7 +1,7 @@
 use container_trait::{FaceData, RedgeContainers};
 use iterators::{FaceLoopHedgeIter, FaceVertIterator};
 use linear_isomorphic::prelude::*;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 
 use crate::hedge_handle::HedgeHandle;
@@ -56,7 +56,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
     }
 
     #[inline]
-    pub fn vertex_by_handle(&'r self, vid: VertId) -> Option<VertHandle<'r, R>> {
+    pub fn vertex_by_id(&'r self, vid: VertId) -> Option<VertHandle<'r, R>> {
         if self.hedge().face_loop().any(|h| h.source().id() == vid) {
             return Some(self.redge.vert_handle(vid));
         }
@@ -136,14 +136,14 @@ where
     }
 
     fn normal(&self) -> VertData<R> {
-        let p1 = self.hedge().source().data().clone();
-        let p2 = self.hedge().face_next().source().data().clone();
-        let p3 = self.hedge().face_prev().source().data().clone();
+        // This implementation is expensive but reduces nuemrical errors by grabbing the best pair of edges to
+        // compute a normal with.
+        let pts: Vec<_> = self.vertices().map(|v| v.data().clone()).collect();
+        let best_vertex = angle_closest_to_90(self);
+        let d1 = pts[(best_vertex + 2) % 3].clone() - pts[(best_vertex + 1) % 3].clone();
+        let d2 = pts[best_vertex].clone() - pts[(best_vertex + 1) % 3].clone();
 
-        let e1 = p2 - p1.clone();
-        let e2 = p3 - p1;
-
-        e1.cross(&e2)
+        d1.cross(&d2)
     }
 
     fn unit_normal(&self) -> VertData<R> {
@@ -160,4 +160,28 @@ where
 
         centroid * (S::from(1.0).unwrap() / S::from(count).unwrap())
     }
+}
+
+pub fn angle_closest_to_90<R: RedgeContainers, S>(face: &FaceHandle<'_, R>) -> usize
+where
+    VertData<R>: InnerSpace<S>,
+    S: RealField,
+{
+    let points: Vec<_> = face.vertices().map(|v| v.data().clone()).collect();
+    let mut best_cos = S::from(2.0).unwrap();
+    let mut selected_i = 0;
+
+    for i in 0..3 {
+        let d1 = (points[i].clone() - points[(i + 1) % 3].clone()).normalized();
+        let d2 = (points[(i + 2) % 3].clone() - points[(i + 1) % 3].clone()).normalized();
+
+        let cos_abs = d1.dot(&d2).abs();
+
+        if cos_abs < best_cos {
+            best_cos = cos_abs;
+            selected_i = i;
+        }
+    }
+
+    selected_i
 }

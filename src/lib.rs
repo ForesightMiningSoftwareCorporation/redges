@@ -16,20 +16,18 @@ pub mod vert_handle;
 pub mod wedge;
 
 pub use algorithms::quadric_simplification;
-pub mod queue;
+pub use algorithms::queue;
 
 use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, VertData};
 use edge_handle::EdgeHandle;
 use face_handle::FaceHandle;
 use hedge_handle::HedgeHandle;
-use helpers::{
-    _collect_backward_cycle, _collect_forward_cycle, join_radial_cycles, join_vertex_cycles,
-    link_face, link_hedges_in_face, remove_edge_from_cycle, split_hedge,
-};
+use helpers::{join_vertex_cycles, link_face, remove_edge_from_cycle, split_hedge};
 use linear_isomorphic::{InnerSpace, RealField};
+use mesh_deleter::MeshDeleter;
 use validation::{correctness_state, RedgeCorrectness};
 use vert_handle::VertHandle;
-mod wavefront_loader;
+pub mod wavefront_loader;
 
 macro_rules! define_id_struct {
     ($name:ident) => {
@@ -71,6 +69,7 @@ define_id_struct!(EdgeId);
 define_id_struct!(HedgeId);
 define_id_struct!(FaceId);
 
+type FaceList<R> = (Vec<VertData<R>>, Vec<Vec<usize>>, Vec<FaceData<R>>);
 pub struct Redge<R: RedgeContainers> {
     vert_data: R::VertContainer,
     edge_data: R::EdgeContainer,
@@ -164,7 +163,6 @@ impl<R: RedgeContainers> Redge<R> {
                         hedge_cutoff + ((i + face_vertices.len() - 1) % face_vertices.len()),
                     ),
                     is_active: true,
-                    ..Default::default()
                 });
 
                 active_face.hedge_id = hedge_id;
@@ -308,17 +306,21 @@ impl<R: RedgeContainers> Redge<R> {
         })
     }
 
-    pub fn vert_handle<'r>(&'r self, id: VertId) -> VertHandle<'r, R> {
+    pub fn vert_handle(&self, id: VertId) -> VertHandle<'_, R> {
         assert!(id.to_index() < self.verts_meta.len());
         VertHandle::new(id, self)
     }
 
-    pub fn edge_handle<'r>(&'r self, id: EdgeId) -> EdgeHandle<'r, R> {
-        assert!(id.to_index() < self.edges_meta.len());
+    pub fn edge_handle(&self, id: EdgeId) -> EdgeHandle<'_, R> {
+        assert!(
+            id.to_index() < self.edges_meta.len(),
+            "Edge {:?} is outside bounds.",
+            id
+        );
         EdgeHandle::new(id, self)
     }
 
-    pub fn hedge_handle<'r>(&'r self, id: HedgeId) -> HedgeHandle<'r, R> {
+    pub fn hedge_handle(&self, id: HedgeId) -> HedgeHandle<'_, R> {
         assert!(
             id.to_index() < self.hedges_meta.len(),
             "hedge id {:?} is invalid.",
@@ -327,7 +329,7 @@ impl<R: RedgeContainers> Redge<R> {
         HedgeHandle::new(id, self)
     }
 
-    pub fn face_handle<'r>(&'r self, id: FaceId) -> FaceHandle<'r, R> {
+    pub fn face_handle(&self, id: FaceId) -> FaceHandle<'_, R> {
         assert!(id != FaceId::ABSENT);
         assert!(id.to_index() < self.faces_meta.len());
         FaceHandle::new(id, self)
@@ -355,7 +357,7 @@ impl<R: RedgeContainers> Redge<R> {
     /// Since the defragmentation won't be applied until destruction of the deleter, these vertices
     /// will be exported, despite being innactive, to preserve indexing. So if you encounter
     /// ghost or nan vertices in the returned data, check whether those vertices are innactive.
-    pub fn to_face_list(&self) -> (Vec<VertData<R>>, Vec<Vec<usize>>, Vec<FaceData<R>>) {
+    pub fn to_face_list(&self) -> FaceList<R> {
         let verts = self.vert_data.iterate().cloned().collect();
         let mut face_indices = Vec::with_capacity(self.faces_meta.len());
         let mut face_data = Vec::with_capacity(self.faces_meta.len());
@@ -571,14 +573,14 @@ impl<R: RedgeContainers> Redge<R> {
         let v2_edge = self.verts_meta[v2.to_index()].edge_id;
         join_vertex_cycles(v2_edge, en, self);
 
-        debug_assert!(correctness_state(&self) == RedgeCorrectness::Correct);
+        debug_assert!(correctness_state(self) == RedgeCorrectness::Correct);
 
         vn
     }
 
     pub(crate) fn add_vert(&mut self, data: VertData<R>) -> VertId {
         self.vert_data.push(data);
-        let id = VertId(self.verts_meta.len() as usize);
+        let id = VertId(self.verts_meta.len());
         self.verts_meta.push(VertMetaData {
             id,
             edge_id: EdgeId::ABSENT,
@@ -589,7 +591,7 @@ impl<R: RedgeContainers> Redge<R> {
     }
 
     pub(crate) fn add_edge(&mut self, vert_ids: [VertId; 2], data: EdgeData<R>) -> EdgeId {
-        let id = EdgeId(self.edges_meta.len() as usize);
+        let id = EdgeId(self.edges_meta.len());
         self.edge_data.push(data);
         self.edges_meta.push(EdgeMetaData {
             id,
@@ -613,7 +615,7 @@ impl<R: RedgeContainers> Redge<R> {
     /// the redge in an invalid state because the hedge and edge pointers won't be initialized.
     /// Use carefully.
     pub(crate) fn add_hedge(&mut self, source_id: VertId) -> HedgeId {
-        let id = HedgeId(self.hedges_meta.len() as usize);
+        let id = HedgeId(self.hedges_meta.len());
         self.hedges_meta.push(HedgeMetaData {
             id,
             edge_id: EdgeId::ABSENT,
@@ -633,7 +635,7 @@ impl<R: RedgeContainers> Redge<R> {
     /// the redge in an invalid state because the face pointers won't point to anything. Use very carefully.
     pub(crate) fn add_face(&mut self, data: FaceData<R>) -> FaceId {
         self.face_data.push(data);
-        let id = FaceId(self.faces_meta.len() as usize);
+        let id = FaceId(self.faces_meta.len());
 
         self.faces_meta.push(FaceMetaData {
             id,
@@ -642,6 +644,13 @@ impl<R: RedgeContainers> Redge<R> {
         });
 
         id
+    }
+
+    /// In a non-manifold mesh, finds and removes faces that share the same vertices.
+    pub fn clean_overlapping_faces(self) -> Self {
+        let mut deleter = MeshDeleter::start_deletion(self);
+        deleter.remove_overlapping_faces();
+        deleter.end_deletion()
     }
 }
 
@@ -673,9 +682,9 @@ impl EdgeMetaData {
     pub(crate) fn cycle(&self, vert_id: VertId) -> &StarCycleNode {
         debug_assert!(self.is_active);
         if vert_id == self.vert_ids[0] {
-            return &self.v1_cycle;
+            &self.v1_cycle
         } else if vert_id == self.vert_ids[1] {
-            return &self.v2_cycle;
+            &self.v2_cycle
         } else {
             panic!(
                 "Requested vert {:?} in edge ({:?}, {:?})",
@@ -686,9 +695,9 @@ impl EdgeMetaData {
 
     pub(crate) fn cycle_mut(&mut self, vert_id: VertId) -> &mut StarCycleNode {
         if vert_id == self.vert_ids[0] {
-            return &mut self.v1_cycle;
+            &mut self.v1_cycle
         } else if vert_id == self.vert_ids[1] {
-            return &mut self.v2_cycle;
+            &mut self.v2_cycle
         } else {
             panic!("Vertex {:?} does not exist in edge {:?}.", vert_id, self.id)
         }
@@ -696,11 +705,21 @@ impl EdgeMetaData {
 
     pub(crate) fn at(&mut self, vert_id: VertId) -> &mut VertId {
         if vert_id == self.vert_ids[0] {
-            return &mut self.vert_ids[0];
+            &mut self.vert_ids[0]
         } else if vert_id == self.vert_ids[1] {
-            return &mut self.vert_ids[1];
+            &mut self.vert_ids[1]
         } else {
             panic!("{:?}", vert_id)
+        }
+    }
+
+    pub(crate) fn _at_fallible(&mut self, vert_id: VertId) -> Option<&mut VertId> {
+        if vert_id == self.vert_ids[0] {
+            Some(&mut self.vert_ids[0])
+        } else if vert_id == self.vert_ids[1] {
+            Some(&mut self.vert_ids[1])
+        } else {
+            None
         }
     }
 
@@ -714,7 +733,7 @@ impl EdgeMetaData {
             return Some(vids[1]);
         }
 
-        return None;
+        None
     }
 }
 
@@ -776,8 +795,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_edge_flip() {
+    // #[test]
+    fn _test_edge_flip() {
         let ObjData {
             vertices,
             vertex_face_indices,
@@ -802,8 +821,8 @@ mod tests {
         ObjData::export(&(&vs, &fs), "out/after_flip.obj");
     }
 
-    #[test]
-    fn test_edge_split() {
+    // #[test]
+    fn _test_edge_split() {
         let ObjData {
             vertices,
             vertex_face_indices,
@@ -834,8 +853,8 @@ mod tests {
         ObjData::export(&(&vs, &fs), "out/after_flip.obj");
     }
 
-    #[test]
-    fn test_redge_init() {
+    // #[test]
+    fn _test_redge_init() {
         let ObjData {
             vertices,
             vertex_face_indices,

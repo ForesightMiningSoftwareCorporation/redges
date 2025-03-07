@@ -1,16 +1,11 @@
 //! WARNING: These functions can and will break invariants of the Redge
 //! use with extreme care.
 
-use std::{
-    collections::{BTreeSet, HashSet},
-    ops::Mul,
-};
-
-use linear_isomorphic::{InnerSpace, RealField, VectorSpace};
+use std::collections::BTreeSet;
 
 use crate::{
-    container_trait::{RedgeContainers, VertData},
-    EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode, VertId,
+    container_trait::RedgeContainers, EdgeId, Endpoint, FaceId, HedgeId, Redge, StarCycleNode,
+    VertId,
 };
 
 pub(crate) fn remove_edge_from_cycle<R: RedgeContainers>(
@@ -267,7 +262,7 @@ pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(
             continue;
         }
 
-        let mut edge_set_is_fine = |vert_id: VertId| {
+        let mut check_edge_set = |vert_id: VertId| {
             let seen_f = BTreeSet::from_iter(cycle_endpoint_forward(mesh, edge.id, vert_id));
             let seen_b = BTreeSet::from_iter(cycle_endpoint_backward(mesh, edge.id, vert_id));
 
@@ -288,10 +283,10 @@ pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(
 
         let [vert1, vert2] = mesh.edges_meta[edge.id.to_index()].vert_ids;
 
-        if let Some((s1, s2)) = edge_set_is_fine(vert1) {
+        if let Some((s1, s2)) = check_edge_set(vert1) {
             return Some((vert1, s1, s2));
         }
-        if let Some((s1, s2)) = edge_set_is_fine(vert2) {
+        if let Some((s1, s2)) = check_edge_set(vert2) {
             return Some((vert1, s1, s2));
         }
     }
@@ -336,7 +331,7 @@ pub(crate) fn hedge_collapse<R: RedgeContainers>(hedge_id: HedgeId, mesh: &mut R
     mesh.faces_meta[f.to_index()].hedge_id = hn;
 }
 
-pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Redge<R>) {
+pub(crate) fn digon_to_edge<R: RedgeContainers>(face_id: FaceId, mesh: &mut Redge<R>) {
     let handle = mesh.face_handle(face_id);
     debug_assert!(handle.hedge().face_loop().count() == 2);
 
@@ -404,6 +399,64 @@ pub(crate) fn fix_digon_face<R: RedgeContainers>(face_id: FaceId, mesh: &mut Red
     disable_hedge_meta(h1, mesh);
     disable_hedge_meta(h2, mesh);
     disable_face_meta(face_id, mesh);
+}
+
+pub(crate) fn digon_holes_to_edge<R: RedgeContainers>(mut edges: Vec<EdgeId>, mesh: &mut Redge<R>) {
+    let canonical_edge = edges.pop().unwrap();
+
+    let handle = mesh.edge_handle(canonical_edge);
+    let v1 = handle.v1().id();
+    let v2 = handle.v2().id();
+
+    for other_id in edges {
+        let handle = mesh.edge_handle(canonical_edge);
+        let other = mesh.edge_handle(other_id);
+
+        let h1_safe = if handle.has_hedge() {
+            handle.hedge().id()
+        } else {
+            HedgeId::ABSENT
+        };
+        let h2_safe = if other.has_hedge() {
+            other.hedge().id()
+        } else {
+            HedgeId::ABSENT
+        };
+        let other = other.id();
+
+        // Joining first matters, maintain this order of operations.
+        // (It's simpler to remove from a large linked list than to add to a small one).
+        if h1_safe != HedgeId::ABSENT && h2_safe != HedgeId::ABSENT {
+            join_radial_cycles(h1_safe, h2_safe, mesh);
+        }
+
+        let h2_radials: Vec<_> = if h2_safe != HedgeId::ABSENT {
+            mesh.hedge_handle(h2_safe)
+                .radial_loop()
+                .map(|h| h.id())
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        for hid in h2_radials {
+            mesh.hedges_meta[hid.to_index()].edge_id = canonical_edge;
+        }
+
+        // Make sure the vertices remain valid.
+        mesh.verts_meta[v1.to_index()].edge_id = canonical_edge;
+        mesh.verts_meta[v2.to_index()].edge_id = canonical_edge;
+
+        mesh.edges_meta[canonical_edge.to_index()].hedge_id = if h1_safe != HedgeId::ABSENT {
+            h1_safe
+        } else {
+            h2_safe
+        };
+
+        remove_edge_from_cycle(other, Endpoint::V1, mesh);
+        remove_edge_from_cycle(other, Endpoint::V2, mesh);
+        disable_edge_meta(other, mesh);
+    }
 }
 
 /// Returns, in this order, the two half edges along the direction of the input hedge and the new transversal edge.

@@ -7,11 +7,8 @@ use std::{collections::HashSet, ops::Mul};
 use crate::{
     container_trait::{RedgeContainers, VertData},
     edge_handle::EdgeHandle,
-    hedge_handle::HedgeHandle,
-    helpers::_collect_forward_cycle,
     validation::{correctness_state, RedgeCorrectness},
     vert_handle::VertHandle,
-    wavefront_loader::ObjData,
     EdgeId, FaceId, Redge, VertId,
 };
 
@@ -76,7 +73,7 @@ pub fn incremental_refinement_with_context<R: RedgeContainers, S, L, P>(
     context: &mut RemeshingContext<S, R>,
     parameters: RemeshingParametersWithoutCollapse<S>,
     adaptive_target_length: L,
-    reproject: P,
+    _reproject: P,
 ) where
     S: RealField + num::traits::float::FloatCore + Mul<VertData<R>, Output = VertData<R>>,
     VertData<R>: InnerSpace<S>,
@@ -126,6 +123,7 @@ pub fn incremental_refinement_with_context<R: RedgeContainers, S, L, P>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn split_long_edges_with_queue<S, L, R>(
     mesh: &mut Redge<R>,
     high: S,
@@ -150,10 +148,8 @@ where
         let (e_id, weight) = pq.pop().unwrap();
         let edge_handle = mesh.edge_handle(e_id);
 
-        let adaptive_length = adaptive_target_length(
-            edge_handle.v1().id().0 as usize,
-            edge_handle.v2().id().0 as usize,
-        );
+        let adaptive_length =
+            adaptive_target_length(edge_handle.v1().id().0, edge_handle.v2().id().0);
         let target_length = high * adaptive_length;
         debug_assert!(target_length > S::from(f32::EPSILON * 10.0).unwrap());
         if S::from(weight).unwrap() > target_length {
@@ -165,7 +161,7 @@ where
             let in_feature = feature_edges.contains(&edge_handle.id());
 
             let new_vert = mesh.split_edge(edge_handle.id());
-            debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
+            debug_assert!(correctness_state(mesh) == RedgeCorrectness::Correct);
 
             if return_modified {
                 mod_verts.push(new_vert);
@@ -317,7 +313,7 @@ where
         let deviation_pre = deviation(&e);
 
         mesh.flip_edge(eid);
-        debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
+        debug_assert!(correctness_state(mesh) == RedgeCorrectness::Correct);
 
         let e = mesh.edge_handle(eid);
         let deviation_post = deviation(&e);
@@ -325,7 +321,7 @@ where
         if deviation_pre <= deviation_post {
             mesh.flip_edge(eid);
         }
-        debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
+        debug_assert!(correctness_state(mesh) == RedgeCorrectness::Correct);
     }
 }
 
@@ -333,13 +329,14 @@ where
 mod tests {
     use nalgebra::Vector3;
 
-    use crate::validation::{manifold_state, RedgeManifoldness};
     use crate::wavefront_loader::ObjData;
 
     use super::{incremental_refinement_with_context, *};
 
-    #[test]
-    fn test_incremental_refinement_with_context() {
+    // This is disabled as a test because it will chug our CI tools. But it is left here in case
+    // verification is still needed.
+    //#[test]
+    fn _test_incremental_refinement_with_context() {
         let ObjData {
             vertices,
             vertex_face_indices,

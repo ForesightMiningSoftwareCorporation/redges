@@ -1,10 +1,11 @@
-use std::{fmt::Debug, usize};
+use std::fmt::Debug;
 
-use linear_isomorphic::{InnerSpace, RealField};
+use linear_isomorphic::RealField;
 use nalgebra::Vector3;
 
 use crate::VertId;
 
+#[allow(clippy::len_without_is_empty)]
 pub trait PrimitiveContainer: Clone + Debug {
     type PrimitiveData: Clone + Debug;
 
@@ -86,9 +87,7 @@ impl PrimitiveContainer for () {
 
     fn remove(&mut self, _index: u64) -> Self::PrimitiveData {}
 
-    fn swap_remove(&mut self, _index: u64) -> Self::PrimitiveData {
-        ()
-    }
+    fn swap_remove(&mut self, _index: u64) -> Self::PrimitiveData {}
 
     fn resize(&mut self, _new_size: usize) {}
 
