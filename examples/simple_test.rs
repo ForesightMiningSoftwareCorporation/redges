@@ -80,7 +80,7 @@ fn export_to_obj(vertices: &[Vec3], faces: &Vec<FaceData>, path: &str) -> std::i
 
 fn export_to_obj_indices(
     vertices: &[Vec3],
-    faces: &Vec<Vec<usize>>,
+    faces: &[Vec<usize>],
     path: &str,
 ) -> std::io::Result<()> {
     let mut file = File::create(path)?;
@@ -157,7 +157,7 @@ fn main() {
     let (vs, fs) = simplify_example(vertices.clone(), faces, indices.clone());
     export_to_obj(&vs, &fs, "tmp/simple_with_attributes.obj").unwrap();
     let (vs, indices) = simplify_example_geometry_only(vertices.clone(), indices.clone());
-    export_to_obj_indices(&vs, &indices, "tmp/simple_without_attributes.obj");
+    export_to_obj_indices(&vs, &indices, "tmp/simple_without_attributes.obj").unwrap();
 }
 
 fn simplify_example(
