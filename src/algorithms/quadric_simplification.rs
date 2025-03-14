@@ -453,8 +453,18 @@ where
         }
     }
 
-    let res = deleter.end_deletion();
+    let (vert_frag, ..) = deleter.compute_fragmentation_maps();
+    let mut res = deleter.end_deletion();
     debug_assert!(correctness_state(&res) == RedgeCorrectness::Correct);
+    if res.face_data.get(0).attribute_count() >= 1 {
+        // Update face connectivity upon termination.
+        for face in 0..res.face_count() {
+            let f = res.face_data.get_mut(face as u64);
+            for v in f.attribute_vertices_mut() {
+                *v = VertId(*vert_frag.get(&*v).unwrap());
+            }
+        }
+    }
 
     (res, worst_cost)
 }
