@@ -128,7 +128,7 @@ where
 
         tangential_relaxation(&mut context.mesh, &_corners);
 
-        if new_vert_count <= 0 {
+        if new_vert_count == 0 {
             break;
         }
 
@@ -364,10 +364,10 @@ where
     for vert in mesh.meta_verts() {
         let mut valence = 0;
         for neighbour in vert.neighbours() {
-            barycenters[neighbour.id().0 as usize] += neighbour.data().clone();
+            barycenters[neighbour.id().0] += neighbour.data().clone();
             valence += 1;
         }
-        valences[vert.id().0 as usize] = valence;
+        valences[vert.id().0] = valence;
     }
 
     for (i, &valence) in valences.iter().enumerate() {
@@ -375,6 +375,8 @@ where
             barycenters[i].clone() * (S::from(1.0).unwrap() / S::from(valence).unwrap());
     }
 
+    // This is way more readable the way it is.
+    #[allow(clippy::needless_range_loop)]
     for i in 0..mesh.vert_data.len() {
         let vert = mesh.vert_data.get_mut(i as u64);
         if corner_verts.contains(&VertId(i)) {
@@ -398,7 +400,7 @@ mod tests {
 
     // This is disabled as a test because it will chug our CI tools. But it is left here in case
     // verification is still needed.
-    //#[test]
+    // #[test]
     fn _test_incremental_refinement_with_context() {
         let ObjData {
             vertices,
