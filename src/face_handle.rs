@@ -43,7 +43,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
     }
 
     #[inline]
-    pub fn vertices(&'r self) -> impl Iterator<Item = VertHandle<'r, R>> + '_ {
+    pub fn vertices(&'r self) -> impl Iterator<Item = VertHandle<'r, R>> + 'r {
         FaceVertIterator {
             _redge: self.redge,
             face_loop: FaceLoopHedgeIter::new(self.hedge().id(), self.redge),
@@ -51,7 +51,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
     }
 
     #[inline]
-    pub fn vertex_ids(&'r self) -> impl Iterator<Item = VertId> + '_ {
+    pub fn vertex_ids(&'r self) -> impl Iterator<Item = VertId> + 'r {
         self.vertices().map(|v| v.id())
     }
 
@@ -125,7 +125,7 @@ where
     fn centroid(&self) -> V;
 }
 
-impl<'r, R: RedgeContainers, S> FaceMetrics<VertData<R>, VertData<R>, S> for FaceHandle<'r, R>
+impl<R: RedgeContainers, S> FaceMetrics<VertData<R>, VertData<R>, S> for FaceHandle<'_, R>
 where
     VertData<R>: InnerSpace<S>,
     S: RealField,

@@ -4,6 +4,8 @@ use linear_isomorphic::{InnerSpace, RealField, VectorSpace};
 use ordered_float::FloatCore;
 use std::{collections::HashSet, ops::Mul};
 
+use super::pqueue::PQueue;
+use crate::container_trait::PrimitiveContainer;
 use crate::{
     container_trait::{RedgeContainers, VertData},
     edge_handle::EdgeHandle,
@@ -11,8 +13,6 @@ use crate::{
     vert_handle::VertHandle,
     EdgeId, FaceId, Redge, VertId,
 };
-
-use super::pqueue::PQueue;
 
 pub struct RemeshingContext<S: RealField + FloatCore, R: RedgeContainers> {
     pub queue: PQueue<EdgeId, S>,
@@ -67,14 +67,19 @@ where
     }
 }
 
-/// Strictly increase the number of vertices in a mesh via subdivision.
-/// Currently reprojection doesn't do anything.
+/// Strictly increase the number of vertices in a mesh via subdivision. Note that it is possible
+/// that if this method returns 0, that calling the method again will produce more edges due
+/// to equalization and relaxation.
+/// Currently, reprojection doesn't do anything.
+///
+/// Returns the number of added elements (could be less than `parameters.target_additional_vertices`).
 pub fn incremental_refinement_with_context<R: RedgeContainers, S, L, P>(
     context: &mut RemeshingContext<S, R>,
     parameters: RemeshingParametersWithoutCollapse<S>,
     adaptive_target_length: L,
     _reproject: P,
-) where
+) -> usize
+where
     S: RealField + num::traits::float::FloatCore + Mul<VertData<R>, Output = VertData<R>>,
     VertData<R>: InnerSpace<S>,
     L: Fn(usize, usize) -> S,
@@ -110,6 +115,8 @@ pub fn incremental_refinement_with_context<R: RedgeContainers, S, L, P>(
             true,
         );
 
+        let new_vert_count = mod_vs.len();
+
         context.modified_vertices.extend(mod_vs);
         context.modified_faces.extend(mod_fs);
 
@@ -119,8 +126,16 @@ pub fn incremental_refinement_with_context<R: RedgeContainers, S, L, P>(
             &feat_edges,
         );
 
+        tangential_relaxation(&mut context.mesh, &_corners);
+
+        if new_vert_count == 0 {
+            break;
+        }
+
         // TODO: implement reprojection.
     }
+
+    context.mesh.vert_count() - input_verts
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -325,6 +340,56 @@ where
     }
 }
 
+fn tangential_relaxation<R, S>(mesh: &mut Redge<R>, corner_verts: &HashSet<VertId>)
+where
+    R: RedgeContainers,
+    VertData<R>: InnerSpace<S>,
+    S: RealField + Mul<VertData<R>, Output = VertData<R>>,
+{
+    let normals: Vec<_> = mesh
+        .meta_faces()
+        .map(|f| {
+            let vs: Vec<_> = f.vertices().take(3).map(|v| v.data().clone()).collect();
+            let d1 = vs[1].clone() - vs[0].clone();
+            let d2 = vs[2].clone() - vs[0].clone();
+
+            d1.cross(&d2).normalized()
+        })
+        .collect();
+
+    let get_normal = |id: usize| normals[id].clone();
+
+    let mut barycenters = vec![VertData::<R>::default(); mesh.vert_count()];
+    let mut valences = vec![0; mesh.vert_count()];
+    for vert in mesh.meta_verts() {
+        let mut valence = 0;
+        for neighbour in vert.neighbours() {
+            barycenters[neighbour.id().0] += neighbour.data().clone();
+            valence += 1;
+        }
+        valences[vert.id().0] = valence;
+    }
+
+    for (i, &valence) in valences.iter().enumerate() {
+        barycenters[i] =
+            barycenters[i].clone() * (S::from(1.0).unwrap() / S::from(valence).unwrap());
+    }
+
+    // This is way more readable the way it is.
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..mesh.vert_data.len() {
+        let vert = mesh.vert_data.get_mut(i as u64);
+        if corner_verts.contains(&VertId(i)) {
+            continue;
+        }
+        let normal = get_normal(i);
+        let mut pos = vert.clone();
+        pos = pos.clone() + normal.clone() * normal.dot(&(pos.clone() - barycenters[i].clone()));
+
+        *vert = pos;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nalgebra::Vector3;
@@ -335,7 +400,7 @@ mod tests {
 
     // This is disabled as a test because it will chug our CI tools. But it is left here in case
     // verification is still needed.
-    //#[test]
+    // #[test]
     fn _test_incremental_refinement_with_context() {
         let ObjData {
             vertices,
