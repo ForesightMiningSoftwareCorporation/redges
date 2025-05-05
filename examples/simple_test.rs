@@ -154,8 +154,7 @@ fn main() {
         })
         .collect();
 
-    for _ in 0..1000
-    {
+    for _ in 0..1000 {
         let (vs, fs) = simplify_example(vertices.clone(), faces.clone(), indices.clone());
     }
     // export_to_obj(&vs, &fs, "tmp/simple_with_attributes.obj").unwrap();

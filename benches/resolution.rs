@@ -1,14 +1,14 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use spade;
 use nalgebra;
 use nalgebra::Vector3;
-use redges::*;
-use redges::algorithms::remeshing::RemeshingContext;
 use redges::algorithms::remeshing::incremental_refinement_with_context;
+use redges::algorithms::remeshing::RemeshingContext;
 use redges::algorithms::remeshing::RemeshingParametersWithoutCollapse;
-use std::f64::consts::PI;
-use spade::Triangulation;
 use redges::quadric_simplification::{QuadricSimplificationConfig, SimplificationStrategy};
+use redges::*;
+use spade;
+use spade::Triangulation;
+use std::f64::consts::PI;
 
 type Vec3 = Vector3<f64>;
 
@@ -157,9 +157,10 @@ fn subdivision_benchmark(c: &mut Criterion) {
 
     let fs: Vec<_> = fs.iter().map(|i| *i as usize).collect();
 
-
     c.bench_function("redge subdivision", |b| {
-        b.iter(|| {let _ = subdivide_mesh((vs.clone(), fs.clone()), 1_000_000, 0.4);});
+        b.iter(|| {
+            let _ = subdivide_mesh((vs.clone(), fs.clone()), 1_000_000, 0.4);
+        });
     });
 }
 
@@ -168,7 +169,6 @@ fn custom_criterion() -> Criterion {
         .measurement_time(std::time::Duration::from_secs(300))
         .warm_up_time(std::time::Duration::from_secs(10))
 }
-
 
 fn simplification_benchmark(c: &mut Criterion) {
     let res = 1000;
@@ -199,7 +199,7 @@ fn simplification_benchmark(c: &mut Criterion) {
                 QuadricSimplificationConfig {
                     strategy: SimplificationStrategy::Conservative,
                     attribute_simplification:
-                    quadric_simplification::AttributeSimplification::NoAttributeSimplification,
+                        quadric_simplification::AttributeSimplification::NoAttributeSimplification,
                     target_face_count: face_count_before / 10,
                 },
                 |_, _| false,
