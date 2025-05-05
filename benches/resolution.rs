@@ -1,12 +1,10 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use nalgebra;
+use criterion::{criterion_group, criterion_main, Criterion};
 use nalgebra::Vector3;
 use redges::algorithms::remeshing::incremental_refinement_with_context;
 use redges::algorithms::remeshing::RemeshingContext;
 use redges::algorithms::remeshing::RemeshingParametersWithoutCollapse;
 use redges::quadric_simplification::{QuadricSimplificationConfig, SimplificationStrategy};
 use redges::*;
-use spade;
 use spade::Triangulation;
 use std::f64::consts::PI;
 
