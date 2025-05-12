@@ -166,7 +166,6 @@ fn main() {
 
     let face_count_before = redge.face_count();
     let start = Instant::now();
-    println!("Simplifying");
 
     let redge = redge.clean_overlapping_faces();
     let (redge, _) = quadric_simplification::quadric_simplify(
