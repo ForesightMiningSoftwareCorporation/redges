@@ -1,3 +1,7 @@
+#![deny(missing_docs)]
+//! Radial Edge data structure implementation. This crate implements a topology data structure that
+//! can handle non-manifold geometry, with emphasis on versatility and correctness.
+
 // TODO: For all handles and iterators that can panic, add a fallible API
 // wrapper that won't crash.
 
@@ -15,8 +19,8 @@ pub mod validation;
 pub mod vert_handle;
 pub mod wedge;
 
+pub use algorithms::pqueue;
 pub use algorithms::quadric_simplification;
-pub use algorithms::queue;
 
 use container_trait::{EdgeData, FaceData, PrimitiveContainer, RedgeContainers, VertData};
 use edge_handle::EdgeHandle;
@@ -31,6 +35,7 @@ pub mod wavefront_loader;
 
 macro_rules! define_id_struct {
     ($name:ident) => {
+        #[doc = concat!(stringify!($name), ": geometry identifier.")]
         #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
         pub struct $name(pub usize);
         impl Default for $name {
@@ -40,10 +45,12 @@ macro_rules! define_id_struct {
         }
 
         impl $name {
+            /// Sanity check.
             pub fn is_absent(&self) -> bool {
                 self.0 == ABSENT
             }
 
+            /// Convert to usize for indexing.
             pub fn to_index(&self) -> usize {
                 self.0
             }
@@ -62,6 +69,7 @@ macro_rules! define_id_struct {
     };
 }
 
+/// Global constant to mark absent/invalid/uninitialized pointers.
 pub const ABSENT: usize = usize::MAX;
 
 define_id_struct!(VertId);
@@ -70,6 +78,19 @@ define_id_struct!(HedgeId);
 define_id_struct!(FaceId);
 
 type FaceList<R> = (Vec<VertData<R>>, Vec<Vec<usize>>, Vec<FaceData<R>>);
+
+/// Main topology data structure. This will abstract over the individual vertices, edges, etc...
+/// and provide methods to query and modify the topology. Since it generalizes over the container
+/// type, you can use `()` in the type signature to mark empty contianers. For example:
+///
+/// ```rs
+/// let redge = Redge::<(_, (), _)>::new(
+///         vertices,
+///         (),
+///         faces,
+///         indices.iter().map(|f| f.iter().copied()),
+///     );
+/// ```
 pub struct Redge<R: RedgeContainers> {
     vert_data: R::VertContainer,
     edge_data: R::EdgeContainer,
@@ -82,6 +103,8 @@ pub struct Redge<R: RedgeContainers> {
 }
 
 impl<R: RedgeContainers> Redge<R> {
+    /// Construct a new radial edge. The only mandatory input is `vert_data`. `edge_data` and
+    /// `face_data` can be `()` to mark them as "empty". And `faces` can be an empty iterator.
     pub fn new(
         vert_data: R::VertContainer,
         edge_data: R::EdgeContainer,
@@ -250,22 +273,23 @@ impl<R: RedgeContainers> Redge<R> {
         mesh
     }
 
+    /// How many total vertices are currently in the radial edge.
     pub fn vert_count(&self) -> usize {
         self.verts_meta.len()
     }
-
+    /// How many total edges are currently in the radial edge.
     pub fn edge_count(&self) -> usize {
         self.edges_meta.len()
     }
-
+    /// How many total half edges are currently in the radial edge.
     pub fn hedge_count(&self) -> usize {
         self.hedges_meta.len()
     }
-
+    /// How many total faces are currently in the radial edge.
     pub fn face_count(&self) -> usize {
         self.faces_meta.len()
     }
-
+    /// Iterate over each vertex and create a topological handle for queries and operations.
     pub fn meta_verts(&self) -> impl Iterator<Item = VertHandle<R>> {
         self.verts_meta.iter().filter_map(|v| {
             if v.is_active {
@@ -275,7 +299,7 @@ impl<R: RedgeContainers> Redge<R> {
             }
         })
     }
-
+    /// Iterate over each edge and create a topological handle for queries and operations.
     pub fn meta_edges(&self) -> impl Iterator<Item = EdgeHandle<R>> {
         self.edges_meta.iter().filter_map(|e| {
             if e.is_active {
@@ -285,7 +309,7 @@ impl<R: RedgeContainers> Redge<R> {
             }
         })
     }
-
+    /// Iterate over each half edge and create a topological handle for queries and operations.
     pub fn meta_hedges(&self) -> impl Iterator<Item = HedgeHandle<R>> {
         self.hedges_meta.iter().filter_map(|e| {
             if e.is_active {
@@ -295,7 +319,7 @@ impl<R: RedgeContainers> Redge<R> {
             }
         })
     }
-
+    /// Iterate over each face and create a topological handle for queries and operations.
     pub fn meta_faces(&self) -> impl Iterator<Item = FaceHandle<R>> {
         self.faces_meta.iter().filter_map(|f| {
             if f.is_active {
@@ -306,11 +330,13 @@ impl<R: RedgeContainers> Redge<R> {
         })
     }
 
+    /// Get a topology handle around a vertex.
     pub fn vert_handle(&self, id: VertId) -> VertHandle<'_, R> {
         assert!(id.to_index() < self.verts_meta.len());
         VertHandle::new(id, self)
     }
 
+    /// Get a topology handle around an edge.
     pub fn edge_handle(&self, id: EdgeId) -> EdgeHandle<'_, R> {
         assert!(
             id.to_index() < self.edges_meta.len(),
@@ -320,6 +346,7 @@ impl<R: RedgeContainers> Redge<R> {
         EdgeHandle::new(id, self)
     }
 
+    /// Get a topology handle around a half edge.
     pub fn hedge_handle(&self, id: HedgeId) -> HedgeHandle<'_, R> {
         assert!(
             id.to_index() < self.hedges_meta.len(),
@@ -329,24 +356,27 @@ impl<R: RedgeContainers> Redge<R> {
         HedgeHandle::new(id, self)
     }
 
+    /// Get a topology handle around a face handle.
     pub fn face_handle(&self, id: FaceId) -> FaceHandle<'_, R> {
         assert!(id != FaceId::ABSENT);
         assert!(id.to_index() < self.faces_meta.len());
         FaceHandle::new(id, self)
     }
-
+    /// Get the underlying geometry data for a vertex.
     pub fn vert_data(&mut self, id: VertId) -> &mut VertData<R> {
         debug_assert!(self.verts_meta[id.to_index()].id == id);
         debug_assert!(self.verts_meta[id.to_index()].is_active);
         self.vert_data.get_mut(id.to_index() as u64)
     }
 
+    /// Get the underlying geometry data for an edge.
     pub fn edge_data(&mut self, id: EdgeId) -> &mut EdgeData<R> {
         debug_assert!(self.edges_meta[id.to_index()].id == id);
         debug_assert!(self.edges_meta[id.to_index()].is_active);
         self.edge_data.get_mut(id.to_index() as u64)
     }
 
+    /// Get the underlying geometry data for a face.
     pub fn face_data(&mut self, id: FaceId) -> &mut FaceData<R> {
         debug_assert!(self.faces_meta[id.to_index()].id == id);
         debug_assert!(self.faces_meta[id.to_index()].is_active);
@@ -389,7 +419,7 @@ impl<R: RedgeContainers> Redge<R> {
             face_data.push(self.face_data.get(face.id.to_index() as u64).clone());
         }
 
-        assert!(face_indices.len() == face_data.len());
+        assert_eq!(face_indices.len(), face_data.len());
         (verts, face_indices, face_data)
     }
 
@@ -578,6 +608,7 @@ impl<R: RedgeContainers> Redge<R> {
         vn
     }
 
+    /// Add a vertex to the Redge.
     pub(crate) fn add_vert(&mut self, data: VertData<R>) -> VertId {
         self.vert_data.push(data);
         let id = VertId(self.verts_meta.len());
@@ -590,6 +621,7 @@ impl<R: RedgeContainers> Redge<R> {
         id
     }
 
+    /// Add an edge connecting two vertices to the Redge.
     pub(crate) fn add_edge(&mut self, vert_ids: [VertId; 2], data: EdgeData<R>) -> EdgeId {
         let id = EdgeId(self.edges_meta.len());
         self.edge_data.push(data);
@@ -611,7 +643,7 @@ impl<R: RedgeContainers> Redge<R> {
         id
     }
 
-    /// Warning: Unlike `add_vert` and `add_edge`, this function will leave
+    /// WARNING: Unlike `add_vert` and `add_edge`, this function will leave
     /// the redge in an invalid state because the hedge and edge pointers won't be initialized.
     /// Use carefully.
     pub(crate) fn add_hedge(&mut self, source_id: VertId) -> HedgeId {
@@ -631,7 +663,7 @@ impl<R: RedgeContainers> Redge<R> {
         id
     }
 
-    /// Warning: Unlike `add_vert` and `add_edge`, this function will leave
+    /// WARNING: Unlike `add_vert` and `add_edge`, this function will leave
     /// the redge in an invalid state because the face pointers won't point to anything. Use very carefully.
     pub(crate) fn add_face(&mut self, data: FaceData<R>) -> FaceId {
         self.face_data.push(data);
@@ -647,6 +679,7 @@ impl<R: RedgeContainers> Redge<R> {
     }
 
     /// In a non-manifold mesh, finds and removes faces that share the same vertices.
+    /// Changes ids, be careful.
     pub fn clean_overlapping_faces(self) -> Self {
         let mut deleter = MeshDeleter::start_deletion(self);
         deleter.remove_overlapping_faces();
@@ -654,6 +687,7 @@ impl<R: RedgeContainers> Redge<R> {
     }
 }
 
+/// Topology data of a vertex.
 #[derive(Default, Debug, Clone)]
 struct VertMetaData {
     id: VertId,
@@ -662,6 +696,8 @@ struct VertMetaData {
     /// Whether this element is being used (set to false on removal).
     is_active: bool,
 }
+
+/// Topology data of an edge.
 #[derive(Default, Debug, Clone)]
 struct EdgeMetaData {
     id: EdgeId,
@@ -775,15 +811,19 @@ struct FaceMetaData {
     is_active: bool,
 }
 
+/// Circular linked list of the edges incident on a vertex.
 #[derive(Default, Debug, Clone)]
 pub struct StarCycleNode {
     prev_edge: EdgeId,
     next_edge: EdgeId,
 }
 
+/// Enumerator to identify which of the two endpoints is being queried.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Endpoint {
+    /// First vertex in the edge (arbitrary ordering)
     V1,
+    /// Second vertex in the edge (arbitrary ordering)
     V2,
 }
 

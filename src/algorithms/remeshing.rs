@@ -1,3 +1,5 @@
+//! Remeshing algorithms, used to increase resolution of a mesh while simultaneously trying to improve
+//! discrete topology.
 use core::f64::consts::PI;
 use core::fmt::Debug;
 use linear_isomorphic::{InnerSpace, RealField, VectorSpace};
@@ -13,20 +15,28 @@ use crate::{
     vert_handle::VertHandle,
     EdgeId, FaceId, Redge, VertId,
 };
-
+/// Input argument for remeshing.
 pub struct RemeshingContext<S: RealField + FloatCore, R: RedgeContainers> {
+    /// Priority queue.
     pub queue: PQueue<EdgeId, S>,
+    /// Mesh that will be remeshed.
     pub mesh: Redge<R>,
+    /// Vertices that have been modified since the last call to remeshing.
     pub modified_vertices: Vec<VertId>,
+    /// Faces that have been modified since the last call to remeshing.
     pub modified_faces: Vec<FaceId>,
 }
 
+/// Input argument for remeshing without edge collapsing.
 pub struct RemeshingParametersWithoutCollapse<S>
 where
     S: Debug + Clone + Default + num::Float,
 {
+    /// Don't allow triangles with angles smaller than this value.
     pub minimum_triangle_angle: S,
+    /// Edges whose incident triangles
     pub dihedral_angle_tolerance: S,
+    /// How many new vertices should we try to add before returning.
     pub target_additional_vertices: usize,
 }
 
@@ -49,6 +59,7 @@ where
     S: RealField + num::traits::float::FloatCore,
     VertData<R>: InnerSpace<S>,
 {
+    /// Construct context from mesh.
     pub fn from_mesh(mesh: Redge<R>) -> Self {
         debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
         let pq = PQueue::from_iter(mesh.meta_edges().map(|e| {
@@ -138,6 +149,8 @@ where
     context.mesh.vert_count() - input_verts
 }
 
+/// Split edges that exceed a given dynamic length. as computed by
+/// `adaptive_target_length`.
 #[allow(clippy::too_many_arguments)]
 fn split_long_edges_with_queue<S, L, R>(
     mesh: &mut Redge<R>,

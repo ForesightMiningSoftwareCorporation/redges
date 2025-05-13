@@ -1,9 +1,12 @@
+//! This module implements quadric error based mesh simplification. It includes both
+//! a variant that is agnostic to attributes and a version that measures attribute errors.
+
 use core::f32;
 use core::hash::Hash;
 use std::{collections::BTreeSet, ops::Mul};
 
 use crate::{
-    algorithms::queue::PQueue,
+    algorithms::pqueue::PQueue,
     container_trait::{
         FaceAttributeGetter, FaceData, PrimitiveContainer, VertData, VertexAttributeGetter,
     },
@@ -24,6 +27,7 @@ use num_traits::{
 
 const EDGE_WEIGHT_PENALTY: f32 = 10.0;
 
+/// Which kind of simplification strategy to use.
 #[derive(Debug, PartialEq, Eq)]
 pub enum SimplificationStrategy {
     /// Stop simplifying when no valid edges exist for preserving topology (closed meshes remain closed).
@@ -32,16 +36,21 @@ pub enum SimplificationStrategy {
     /// otherwise closed meshes).
     Aggressive,
 }
-
+/// Whether to simplify attributes as well as vertices.
 #[derive(Debug, PartialEq, Eq)]
 pub enum AttributeSimplification {
+    /// Ignore attributes.
     NoAttributeSimplification,
-    SimplifyAtributes,
+    /// Use attributes in simplification.
+    SimplifyAttributes,
 }
-
+/// Meta data to configure the simplification strategy.
 pub struct QuadricSimplificationConfig {
+    /// Whether to simplify aggressively or conservatively.
     pub strategy: SimplificationStrategy,
+    /// Whether to consider attributes during simplification.
     pub attribute_simplification: AttributeSimplification,
+    /// Target number of faces to reach.
     pub target_face_count: usize,
 }
 
@@ -88,7 +97,7 @@ where
     }
 
     let (mut mesh, cost) = match config.attribute_simplification {
-        AttributeSimplification::SimplifyAtributes => {
+        AttributeSimplification::SimplifyAttributes => {
             simplify_with_attributes(mesh, config, locked_vertex)
         }
         AttributeSimplification::NoAttributeSimplification => {
@@ -133,8 +142,8 @@ where
 
     let mut worst_cost = <S as Float>::min_value();
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
+        println!("{}", queue.len());
         let (
-            cost,
             QueueEdgeAttributeData {
                 id: eid,
                 geometric_cost,
@@ -142,6 +151,7 @@ where
                 wedges_to_merge,
                 wedge_order,
             },
+            cost,
         ) = queue.pop().unwrap();
 
         let edge_handle = deleter.mesh().edge_handle(eid);
@@ -274,7 +284,6 @@ where
             }
 
             queue.push(
-                cost,
                 QueueEdgeAttributeData {
                     id: e.id(),
                     geometric_cost: geom_cost,
@@ -282,12 +291,13 @@ where
                     wedges_to_merge,
                     wedge_order,
                 },
+                cost,
             );
         }
     }
 
     // Doing edge collapse after a certain point is very challenging, as a compromise,
-    // if we reach here and we need a smaller mesh, we will just delete faces, if anyone wants
+    // if we reach here, and if we need a smaller mesh, we will just delete faces, if anyone wants
     // to try making an edge collapse that works no matter the situation you have my blessing.
     while deleter.active_face_count() > config.target_face_count
         && config.strategy == SimplificationStrategy::Aggressive
@@ -340,12 +350,12 @@ where
     let mut worst_cost = <S as Float>::min_value();
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
         let (
-            cost,
             QueueEdgeSimpleData {
                 id: eid,
                 geometric_cost,
                 optimum,
             },
+            cost,
         ) = queue.pop().unwrap();
 
         let edge_handle = deleter.mesh().edge_handle(eid);
@@ -431,12 +441,12 @@ where
             }
 
             queue.push(
-                cost,
                 QueueEdgeSimpleData {
                     id: e.id(),
                     geometric_cost: geom_cost,
                     optimum,
                 },
+                cost,
             );
         }
     }
@@ -599,7 +609,6 @@ where
         let (cost, geom_cost, optimum, wedges_to_merge, wedge_order) =
             edge_cost_with_wedges(&edge, wedges, attribute_count);
         queue.push(
-            cost,
             QueueEdgeAttributeData {
                 id: edge.id(),
                 geometric_cost: geom_cost,
@@ -607,6 +616,7 @@ where
                 wedges_to_merge,
                 wedge_order,
             },
+            cost,
         );
     }
 
@@ -628,12 +638,12 @@ where
     for edge in mesh.meta_edges() {
         let (cost, geom_cost, optimum) = edge_cost_without_attributes(&edge);
         queue.push(
-            cost,
             QueueEdgeSimpleData {
                 id: edge.id(),
                 geometric_cost: geom_cost,
                 optimum,
             },
+            cost,
         );
     }
 

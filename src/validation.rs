@@ -1,3 +1,5 @@
+//! Functions to verify topological and geometrical invariants and validity.
+
 // The functions defined here should remain functions, don't refactor them to methods.
 // The reason is that, we will likely want to implement trait interfaces
 // to abstract meshes. These methods should work for those abstractions.
@@ -19,47 +21,77 @@ use crate::{
     EdgeId, Endpoint, HedgeId, Redge, VertId,
 };
 
+/// Marks the relationship between a bad element and the element that was inspected.
 #[derive(Debug, PartialEq, Eq)]
 pub enum TopologicalRelation {
+    /// This element is next to the inspected element.
     Next,
+    /// This element is previous to the inspected element.
     Prior,
 }
 
 // TODO: For each function in this file there will be missing checks, add them as
 // needed until they are entirely trustworthy.
+/// Error reporting values for the first degeneracy found in a radial edge.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RedgeCorrectness {
+    /// Radial edge is adequate.
     Correct,
+    /// Counts between metadata and data do not match.
     MismatchingArrayLengths,
+    /// An active element points to an invalid vertex at the specified internal index.
     InvalidVert(usize),
+    /// An active element points to an invalid edge at the specified internal index.
     InvalidEdge(usize, EdgeCorrectness),
+    /// An active half edge points to an invalid vertex at the specified internal index.
     InvalidHedge(usize, HedgeCorrectness),
+    /// An active element points to an invalid face at the specified internal index.
     InvalidFace(usize),
+    /// The vertex cycles of two different edges incident at the same common vertex do not match.
     VertexCyclesDontMatch(VertId, BTreeSet<EdgeId>, BTreeSet<EdgeId>),
 }
 
+/// Error reporting values for the first degeneracy found in an edge.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EdgeCorrectness {
+    /// Edge is adequate.
     Correct,
+    /// An active element is pointing to an absent edge.
     EdgeIsAbsent,
+    /// The id of this edge does not match its internal index.
     IdAndIndexMismatch,
+    /// One of the endpoints is pointing to an absent vertex.
     AbsentEndpoint(Endpoint),
+    /// One of the radial cycles is empty (this should not happen even if there is a single isolated
+    /// edge in the entire mesh).
     CyclePointsToAbsent(Endpoint),
+    /// One of the endpoint cycles is not properly set up.
     CycleIsBroken(Endpoint, TopologicalRelation, VertId),
+    /// Both endpoints of this edge point to the same underlying vertex.
     EdgeWithOnlyOnePoint,
+    /// The hedge pointer points to an invalid/removed half edge.
     InvalidHedgePointer(HedgeId),
+    /// The half edge this edge points to, points to a different edge.
     HedgePointsToDifferentEdge,
-    RepeatedEndpoint(VertId),
 }
 
+/// Error reporting values for the first degeneracy found in a half edge.
 #[derive(Debug, PartialEq, Eq)]
 pub enum HedgeCorrectness {
+    /// Half edge is adequate.
     Correct,
+    /// The id of this half edge does not correspond to its internal index.
     IdAndIndexMismatch,
+    /// The loop this half edge points to dos not form a simple cycle around the face.
     FaceLoopChainIsBroken,
+    /// The loop this half edge points to dos not form a simple cycle orbiting the edge.
     RadialChainIsBroken,
+    /// The source vertex id points to an absent/invalid vertex.
     SourceIsAbsent,
+    /// The edge if points to an absent/invalid vertex.
     EdgeIsAbsent,
+    /// The radial chain has more than 100 elements. This is not, strictly speaking, an error
+    /// but it's extremely suspicious.
     LongRadialChain,
 }
 
@@ -163,9 +195,6 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         let prev_edge_v2 = &mesh.edges_meta[edge.v2_cycle.prev_edge.to_index()];
 
         let [v1, v2] = edge.vert_ids;
-        if v1 == v2 {
-            return RedgeCorrectness::InvalidEdge(i, EdgeCorrectness::RepeatedEndpoint(v1));
-        }
         if next_edge_v1.vert_ids[0] != v1 && next_edge_v1.vert_ids[1] != v1 {
             return RedgeCorrectness::InvalidEdge(
                 i,
@@ -340,13 +369,14 @@ pub fn count_regular_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
         .map(|v| (v.star_edges().count() == 6) as usize)
         .sum()
 }
-
+/// An isolated vertex is a vertex whose edge pointer is absent.
 pub fn count_isolated_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
     mesh.meta_verts()
         .map(|v| (v.star_edges().count() == 0) as usize)
         .sum()
 }
 
+/// Number of inactive vertices O(n).
 pub fn count_innactive_vertices<R: RedgeContainers>(mesh: &Redge<R>) -> usize {
     mesh.verts_meta
         .iter()
@@ -366,23 +396,37 @@ pub fn vertex_valence_histogram<R: RedgeContainers>(mesh: &Redge<R>) -> BTreeMap
     histogram
 }
 
+/// Topology state of a mesh.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RedgeManifoldness {
+    /// Mesh is two manifold.
     IsManifold,
+    /// This is an *error* the redge is broken, the mesh *must* be discarded
+    /// and whatever created it debugged.
     IsIncorrect(RedgeCorrectness),
+    /// Found a vertex with no incident edges.
     IsolatedVertex(usize),
+    /// Found an edge with a numer of incident faces other than 1 or 2.
     NonManifoldEdge(usize, EdgeManifoldness),
-    VertexAssociatedWithMultipleCycles,
 }
 
+/// Manifold state of an edge.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EdgeManifoldness {
+    /// Edge is manifold.
     Manifold,
+    /// This is an *error* a half edge is pointing to itself as part of the face cycle.
     SelfReferentialFaceCycle,
+    /// The `next` field of a half edge in a face cycle points to a half edge whose `prev` is not
+    /// itself, or vice versa.
     BrokenFaceLoop,
+    /// The `next` field of a half edge in a radial cycle points to a half edge whose `prev` is not
+    /// itself, or vice versa.
     BrokenRadialLoop,
 }
 
+/// Inspect the mesh and return its manifold state. Some values are hard errors, other
+/// merely status reports, see `RedgeManifoldness` for details.
 pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness {
     match correctness_state(mesh) {
         RedgeCorrectness::Correct => {}
@@ -428,10 +472,16 @@ pub fn manifold_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeManifoldness 
     RedgeManifoldness::IsManifold
 }
 
+/// Geometry status of a mesh. Topology correctness is a hard constraint, but geometry correctness
+/// is less important.
 #[derive(Debug, PartialEq, Eq)]
 pub enum GeometryCorrectness {
+    /// Geometry is adequate.
     Correct,
+    /// Hard error, the topology is broken, the cause *must* be investigated.
     RedgeIsBroken(RedgeCorrectness),
+    /// Found two different vertices that share a location in space. May or may not be a problem
+    /// depending on the application.
     DuplicatePoints(VertId, VertId),
 }
 
@@ -476,6 +526,8 @@ impl<V: InnerSpace<S> + Debug, S: RealField + Signed + Bounded> rstar::Point for
     }
 }
 
+/// Inspect the mesh and report whether the geometry is sound. Checks that the topology is also
+/// correct.
 pub fn validate_geometry_state<R: RedgeContainers, S: RealField + Bounded + Signed>(
     mesh: &Redge<R>,
     epsilon: S,

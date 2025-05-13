@@ -1,3 +1,4 @@
+//! Helper structure/methods for exporting and loading to/from wavefront files (only geometry).
 use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::io::Write;
@@ -9,29 +10,47 @@ use linear_isomorphic::*;
 type Vec3 = nalgebra::Vector3<f32>;
 type Vec2 = nalgebra::Vector2<f32>;
 
+/// Wavefront data.
 #[derive(Debug)]
 pub struct ObjData {
+    /// Vertex data.
     pub vertices: Vec<Vec3>,
+    /// Normal data.
     pub normals: Vec<Vec3>,
+    /// Uv data.
     pub uvs: Vec<Vec2>,
+    /// Vertex topology.
     pub vertex_face_indices: Vec<Vec<u64>>,
+    /// Normal topology.
     pub normal_face_indices: Vec<Vec<u64>>,
+    /// Texture topology.
     pub uv_face_indices: Vec<Vec<u64>>,
+    /// Specified lines (part of the standard, most parsers forget this exists).
     pub lines: Vec<[u64; 2]>,
+    /// List of objects, use this to index into the above arrays if you
+    /// wish to extract a specific object.
     pub objects: Vec<ObjectRanges>,
 }
 
+/// Metadata needed t extract a single object in the wavefront.
 #[derive(Debug)]
 pub struct ObjectRanges {
+    /// Name of the object.
     pub name: String,
+    /// Indices of the position range of the object.
     pub positions: (u64, u64),
+    /// Indices of the normal range of the object.
     pub normals: (u64, u64),
+    /// Indices of the uv range of the object.
     pub uvs: (u64, u64),
+    /// Indices of the lines range of the object.
     pub lines: (u64, u64),
+    /// Indices of the polygonal faces range of the object.
     pub polygons: [(u64, u64); 3],
 }
 
 impl ObjData {
+    /// Load wavefront dta from a file.
     pub fn from_disk_file(path: &str) -> Self {
         let file = File::open(path).unwrap();
         let reader = BufReader::new(file);
@@ -109,6 +128,7 @@ impl ObjData {
         }
     }
 
+    /// Write a compatible mesh representation to disk.
     pub fn export<'a, T>(mesh: &'a T, path: &str)
     where
         T: WaveFrontCompatible<'a>,
@@ -190,16 +210,26 @@ impl ObjData {
     }
 }
 
+/// Trait needed to export a mesh representation as an obj file (only geometry information).
+/// very useful for inspecting meshes.
 pub trait WaveFrontCompatible<'a> {
+    /// Underlying scalar representation for vector data, usually f32 or f64.
     type Scalar: num_traits::Float + Debug + AddAssign + Display;
 
+    /// A way to iterate over the vertex positions.
     fn pos_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]>;
+    /// A way to iterate over the texture coordinates.
     fn uv_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 2]>;
+    /// A way to iterate over the norms.
     fn norm_iterator(&'a self) -> impl Iterator<Item = [Self::Scalar; 3]>;
 
+    /// A way to iterate over the lines/segments.
     fn segment_iterator(&'a self) -> impl Iterator<Item = [usize; 2]>;
+    /// A way to iterate over the vertex topology.
     fn pos_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>>;
+    /// A way to iterate over the uv topology.
     fn uv_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>>;
+    /// A way to iterate over the normal topology.
     fn norm_index_iterator(&'a self) -> impl Iterator<Item = impl Iterator<Item = usize>>;
 }
 

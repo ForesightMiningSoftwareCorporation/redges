@@ -1,3 +1,4 @@
+//! Topology handle around a face.
 use container_trait::{FaceData, RedgeContainers};
 use iterators::{FaceLoopHedgeIter, FaceVertIterator};
 use linear_isomorphic::prelude::*;
@@ -11,6 +12,7 @@ use crate::{container_trait::PrimitiveContainer, Redge};
 
 use crate::*;
 
+/// Topology handle for a face.
 pub struct FaceHandle<'r, R: RedgeContainers> {
     id: FaceId,
     pub(crate) redge: &'r Redge<R>,
@@ -22,18 +24,22 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
         Self { id, redge }
     }
 
+    /// Id.
     pub fn id(&self) -> FaceId {
         self.id
     }
 
+    /// A random half edge within the face.
     pub fn hedge(&self) -> HedgeHandle<'r, R> {
         HedgeHandle::new(self.metadata().hedge_id, self.redge)
     }
 
+    /// Underlying data.
     pub fn data(&self) -> &FaceData<R> {
         self.redge.face_data.get(self.id.to_index() as u64)
     }
 
+    /// Is the face still valid/active.
     pub fn is_active(&self) -> bool {
         self.metadata().is_active
     }
@@ -42,6 +48,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
         &self.redge.faces_meta[self.id.to_index()]
     }
 
+    /// Vertices in the face.
     #[inline]
     pub fn vertices(&'r self) -> impl Iterator<Item = VertHandle<'r, R>> + 'r {
         FaceVertIterator {
@@ -50,11 +57,13 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
         }
     }
 
+    /// Ids of the vertices in the face.
     #[inline]
     pub fn vertex_ids(&'r self) -> impl Iterator<Item = VertId> + 'r {
         self.vertices().map(|v| v.id())
     }
 
+    /// If part of this face, return a handle to the vertex, otherwise `None`.
     #[inline]
     pub fn vertex_by_id(&'r self, vid: VertId) -> Option<VertHandle<'r, R>> {
         if self.hedge().face_loop().any(|h| h.source().id() == vid) {
@@ -64,6 +73,7 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
         None
     }
 
+    /// If this face doesn't share an edge with any other one it will return true.
     #[inline]
     pub fn is_isolated(&'r self) -> bool {
         self.hedge()
@@ -103,8 +113,10 @@ impl<'r, R: RedgeContainers> FaceHandle<'r, R> {
     }
 }
 
+/// Which issues can be present in a face.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FaceDegeneracies {
+    /// This face is topologically adequate.
     None,
     /// Two sides.
     Digon,
@@ -114,14 +126,19 @@ pub enum FaceDegeneracies {
     Doppelganger,
 }
 
+/// Trait allowing geometry queries in a face.
 pub trait FaceMetrics<V, N, S>
 where
     V: Clone + Debug,
     S: RealField,
 {
+    /// Face area.
     fn area(&self) -> S;
+    /// Normal to the face, assumes a manifold mesh embedded in R^3.
     fn normal(&self) -> N;
+    /// Unit normal to the face, assumes a manifold mesh embedded in R^3.
     fn unit_normal(&self) -> N;
+    /// Average of the face vertex positions.
     fn centroid(&self) -> V;
 }
 
@@ -162,6 +179,7 @@ where
     }
 }
 
+/// Helper function to identify which vertex of a face has the best angle for numerics.
 pub fn angle_closest_to_90<R: RedgeContainers, S>(face: &FaceHandle<'_, R>) -> usize
 where
     VertData<R>: InnerSpace<S>,
