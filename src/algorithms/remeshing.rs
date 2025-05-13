@@ -62,7 +62,7 @@ where
     /// Construct context from mesh.
     pub fn from_mesh(mesh: Redge<R>) -> Self {
         debug_assert!(correctness_state(&mesh) == RedgeCorrectness::Correct);
-        let pq = PQueue::from_iter(mesh.meta_edges().map(|e| {
+        let pq = PQueue::from_iterator(mesh.meta_edges().map(|e| {
             (
                 e.id(),
                 (e.v1().data().clone() - e.v2().data().clone()).norm(),
@@ -106,7 +106,7 @@ where
     let input_verts = context.mesh.vert_count();
     while context.mesh.vert_count() < input_verts + parameters.target_additional_vertices {
         if context.queue.is_empty() {
-            let pq = PQueue::from_iter(context.mesh.meta_edges().map(|e| {
+            let pq = PQueue::from_iterator(context.mesh.meta_edges().map(|e| {
                 (
                     e.id(),
                     (e.v1().data().clone() - e.v2().data().clone()).norm(),

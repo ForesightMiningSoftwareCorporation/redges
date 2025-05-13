@@ -44,7 +44,7 @@ where
     }
 
     /// Make a queue from an iterator.
-    pub fn from_iter<I>(iter: I) -> Self
+    pub fn from_iterator<I>(iter: I) -> Self
     where
         I: Iterator<Item = (T, W)>,
     {
