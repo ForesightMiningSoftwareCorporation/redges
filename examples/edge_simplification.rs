@@ -96,7 +96,7 @@ fn export_to_obj_indices(
 }
 
 fn main() {
-    let mut obj_data = ObjData::from_disk_file("assets/loop_cube.obj");
+    let mut obj_data = ObjData::from_disk_file("assets/armadillo.obj");
     if obj_data.uv_face_indices.is_empty() {
         obj_data.uvs = vec![nalgebra::Vector2::new(0., 0.)];
         obj_data.uv_face_indices = vec![vec![0; 3]; obj_data.vertex_face_indices.len()];
@@ -153,12 +153,12 @@ fn main() {
                 .collect::<Vec<_>>()
         })
         .collect();
-    //
-    // println!("start simplification");
-    // let (vs, fs) = simplify_example(vertices.clone(), faces.clone(), indices.clone());
-    // export_to_obj(&vs, &fs, "tmp/simple_with_attributes.obj").unwrap();
 
-    println!("{}", vertices.len());
+    // This will take a few seconds but less than a minute.
+    println!("start simplification");
+    let (vs, fs) = simplify_example(vertices.clone(), faces.clone(), indices.clone());
+    export_to_obj(&vs, &fs, "tmp/simple_with_attributes.obj").unwrap();
+
     println!("start simplification without attributes");
     let (vs, indices) = simplify_example_geometry_only(vertices.clone(), indices.clone());
     export_to_obj_indices(&vs, &indices, "tmp/simple_without_attributes.obj").unwrap();

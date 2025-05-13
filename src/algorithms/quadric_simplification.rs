@@ -142,7 +142,6 @@ where
 
     let mut worst_cost = <S as Float>::min_value();
     while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
-        println!("{}", queue.len());
         let (
             QueueEdgeAttributeData {
                 id: eid,

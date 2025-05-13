@@ -63,14 +63,14 @@ where
     /// If an element equal to item is already in the queue, its priority is updated and the old
     /// priority is returned in Some; otherwise, item is inserted with priority and `None` is returned.
     pub fn push(&mut self, item: T, weight: W) -> Option<OrderedFloat<W>> {
-        self.queue.push(item, OrderedFloat(weight))
+        self.queue.push(item, OrderedFloat(-weight))
     }
 
     /// Removes the item with the greatest priority from the priority queue and returns the pair
     /// `item`, `weight`, or `None` if the queue is empty.
     pub fn pop(&mut self) -> Option<(T, W)> {
         if let Some(item) = self.queue.pop() {
-            Some((item.0, item.1 .0))
+            Some((item.0, -item.1 .0))
         } else {
             None
         }
