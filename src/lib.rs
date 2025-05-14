@@ -1,6 +1,5 @@
 #![deny(missing_docs)]
-//! Radial Edge data structure implementation. This crate implements a topology data structure that
-//! can handle non-manifold geometry, with emphasis on versatility and correctness.
+#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 // TODO: For all handles and iterators that can panic, add a fallible API
 // wrapper that won't crash.

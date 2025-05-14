@@ -1,12 +1,9 @@
 # Redges, a Radial Edge implementation
-
-NOTE: Pending CLA
  
-## The Radial edge
+## The Radial Edge
 A radial edge is a data structure for topological operations. That is, operations such as finding all vertices
 connected by an edge to a given vertex, finding all triangles sharing a given edge, finding the edge between two
 vertices... And more.
-
 
 ![radial edge](images/radial_edge.svg "Radial Edge")
 
@@ -30,6 +27,9 @@ Although similar to a Half Edge, a Radial Edge can represent non-manifold topolo
 	- Geometry data like face normal, per face uvs...
 	- Pointer to any Half Edge contained in the face.
 
+## Contributing
+
+Contributions are subject to a CLA. The CLA document will be published soon; in the mean time, contact us at licensing@fslabs.ca if you wish to contribute.
 
 ## API  
   
@@ -44,7 +44,7 @@ Additive editing includes operations such as edge flipping, edge splitting, addi
 And example of loading a mesh and inserting new elements through edge_splitting can be seen here:
    
  
-```rs      
+```rust
 // Load mesh data
 let mut obj_data = ObjData::from_disk_file("assets/armadillo.obj");  
 let vertices: Vec<_> = obj_data
@@ -86,10 +86,11 @@ Additive editing maintains the following invariants:
   
  An important note is that destructive operations require and additional wrapping structure, the `MeshDeleter`. The radial edge strives to keep all data in contiguous memory, however, during deletion operations, doing so would not be performant. So instead, we create a wrapping structure to control when elements in a radial edge are allowed to be discontinous in memory.
  
-Additionally, unlike additive operations, destructive operations can break the mesh in a myriad ways and require a lot of attention and care to preserve topology invariants. The deleter helps more easily identify code snippets where bugs are more likely to occur.
+Additionally, unlike additive operations, destructive operations can break the mesh in a myriad ways and require a lot of attention and care to preserve topology invariants. The deleter helps to more easily identify code snippets where bugs are more likely to occur.
  
- ```rs  
- let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);    
+ ```rust
+// Start destructive operations, the mesh will be captured.
+let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
    
  let edge_handle = deleter.mesh().edge_handle(eid);
 
@@ -104,7 +105,7 @@ if !edge_handle.can_collapse() {
     continue;
 }  
 
-// Collapse and fix the geoemtry if needed.
+// Collapse and fix the geometry if needed.
 let vid = deleter.collapse_edge_and_fix(eid);      
 
 // Remove a vertex, creating a hole.
@@ -121,5 +122,5 @@ The following invariants are maintained:
 - During deletion, elements retain their old ids, deleted elements are marked and the user is expected to check if a given id is valid through `handle.is_valid()` before performing queries.
 - After deleting, the user must call `deleter.end_deletion()` to recouperate the underlying radial edge. This operation will drop the deleter and defragment *all* geometry, computing new ids for the new elements. After this call, all prior ids should be considered invalid and *must not* be used for future queries.
 - If old ids are still needed after deletion, then `deleter.compute_fragmentation_maps()` *must* be called *before* ending deletion. This will return maps from the old ids prior to defragmentation to their new ids after defragmentation. These maps must be used to update any stored ids, failure to do so will result in bugs.
- 
- 
+
+![FSL Logo](images/fsl_logo.svg "Fsl Logo")
