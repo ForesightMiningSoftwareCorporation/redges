@@ -11,13 +11,13 @@ Although similar to a Half Edge, a Radial Edge can represent non-manifold topolo
   
   - Vertex, Contains: 
   	- geometry data (e.g. positions, normals).
-  	- Pointer to any edge incident on th vertex.
+    - Pointer to any edge incident on the vertex.
  
   - Edge, Contains: 
-  	- Per edge data (e.g. colour label) 
-  	- Two pointers to circular-doubly-linked lists of edges on the extremities (each endpoint has a list of all the edges that share that vertex). 
-  	- Pointer to any half edge in any face incident on the edge, 
-  	- Two pointer to vertices, one for each endpoint vertex.
+      - Per edge data (e.g. colour label)
+      - Two pointers to circular-doubly-linked lists of edges on the extremities (each endpoint has a list of all the edges that share that vertex).
+      - Pointer to any half edge in any face incident on the edge,
+      - Two pointer to vertices, one for each endpoint vertex.
  
  - Half Edge, Contains:
  	- Pointer to the Edge this Half Edge is parallel to.
