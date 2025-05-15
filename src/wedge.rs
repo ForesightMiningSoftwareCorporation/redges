@@ -1,3 +1,5 @@
+//! Wedge data structure. Used for representing attribute vectors on the wedges surrounding
+//! a vertex. Currently only useful for mesh simplification with attributes.
 use std::collections::{BTreeMap, BTreeSet};
 
 use linear_isomorphic::{InnerSpace, RealField};
@@ -13,14 +15,17 @@ use crate::{
     FaceId, VertId,
 };
 
+/// A wedge is a collection of face corners incident on the same vertex, who all share the same
+/// values.
 #[derive(Debug, Clone)]
-pub struct Wedge<S: RealField> {
+pub(crate) struct Wedge<S: RealField> {
     pub(crate) vertex: VertId,
     pub(crate) attributes: DVector<S>,
 }
 
+/// A wedge data structure allows us to collapse edges while preserving attribute discontinuities.
 #[derive(Debug, Clone)]
-pub struct WedgeDS<S: RealField> {
+pub(crate) struct WedgeDS<S: RealField> {
     pub(crate) wedges: Vec<Wedge<S>>,
     pub(crate) faces: BTreeMap<FaceId, BTreeMap<VertId, usize>>,
 }
@@ -275,7 +280,7 @@ impl<S: RealField> WedgeDS<S> {
 
     // TODO: experimental and untested.
     /// Warning: untested.
-    pub fn test_wedge_extensions_non_manifold<R>(&self, edge: &EdgeHandle<R>) -> Vec<Vec<usize>>
+    pub fn _test_wedge_extensions_non_manifold<R>(&self, edge: &EdgeHandle<R>) -> Vec<Vec<usize>>
     where
         R: RedgeContainers,
         VertData<R>: InnerSpace<S> + VertexAttributeGetter<S>,
@@ -512,6 +517,7 @@ impl<S: RealField> WedgeDS<S> {
     }
 }
 
+/// Construct a quadric error metric matrix out from a face.
 pub fn face_geometric_quadric<R: RedgeContainers, S>(
     face: &FaceHandle<R>,
 ) -> (nalgebra::Matrix3<S>, nalgebra::Vector3<S>, S)

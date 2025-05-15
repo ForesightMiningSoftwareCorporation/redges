@@ -1,3 +1,5 @@
+//! Topology handle around an edge.
+
 use std::collections::HashSet;
 
 use crate::container_trait::{EdgeData, RedgeContainers, VertData};
@@ -9,6 +11,7 @@ use crate::{
     container_trait::PrimitiveContainer, EdgeId, EdgeMetaData, Redge, StarCycleNode, VertId,
 };
 
+/// Topology handle for an edge.
 pub struct EdgeHandle<'r, R: RedgeContainers> {
     id: EdgeId,
     pub(crate) redge: &'r Redge<R>,
@@ -20,34 +23,42 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         Self { id, redge }
     }
 
+    /// Ids of the two endpoints.
     pub fn vertex_ids(&self) -> [VertId; 2] {
         self.metadata().vert_ids
     }
 
+    /// positions of the two vertices.
     pub fn vertex_positions(&self) -> [VertData<R>; 2] {
         [self.v1().data().clone(), self.v2().data().clone()]
     }
 
+    /// Id.
     pub fn id(&self) -> EdgeId {
         self.id
     }
 
+    /// Handle to the first vertex of the edge.
     pub fn v1(&self) -> VertHandle<'r, R> {
         VertHandle::new(self.metadata().vert_ids[0], self.redge)
     }
 
+    /// Handle to the second vertex of the edge.
     pub fn v2(&self) -> VertHandle<'r, R> {
         VertHandle::new(self.metadata().vert_ids[1], self.redge)
     }
 
+    /// Handle to *a* half edge incident ont hsi edge.
     pub fn hedge(&self) -> HedgeHandle<'r, R> {
         HedgeHandle::new(self.metadata().hedge_id, self.redge)
     }
 
+    /// Underlying data.
     pub fn data(&self) -> &EdgeData<R> {
         self.redge.edge_data.get(self.id.to_index() as u64)
     }
 
+    /// Does this handle still point to a valid/active edge?
     pub fn is_active(&self) -> bool {
         self.metadata().is_active
     }
@@ -56,6 +67,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         &self.redge.edges_meta[self.id.to_index()]
     }
 
+    /// Identify which endpoint, if any, the given id corresponds to.
     pub fn vertex_endpoint(&self, vert_id: VertId) -> EdgeVertexType {
         let [v1, v2] = self.metadata().vert_ids;
         let v1_idx = v1.to_index();
@@ -70,7 +82,8 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
             EdgeVertexType::NotInEdge
         }
     }
-
+    /// If the id is in the edge, returns the other endpoints ID. Can panic if
+    /// the input is not either of the endpoints.
     pub fn opposite(&self, vert_id: VertId) -> VertId {
         match self.vertex_endpoint(vert_id) {
             EdgeVertexType::V1 => self.metadata().vert_ids[1],
@@ -79,6 +92,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         }
     }
 
+    /// Get a handle to the iterator
     pub fn edge_cycle_at(&self, vert_id: VertId) -> StarCycleNode {
         match self.vertex_endpoint(vert_id) {
             EdgeVertexType::V1 => self.metadata().v1_cycle.clone(),
@@ -127,7 +141,7 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         self.is_boundary() || !both_endpoints_are_in_boundary
     }
 
-    // Would flipping this edge break topology.
+    /// Would flipping this edge break topology?
     pub fn can_flip(&self) -> bool {
         let [_, [t1, t2]] = self.butterfly_vertices_ids();
         let v1 = self.redge.vert_handle(t1);
@@ -139,18 +153,20 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         !v1_set.contains(&v2.id()) && !v2_set.contains(&v1.id())
     }
 
+    /// Is this edge in the boundary (has one or less incident faces).
     pub fn is_boundary(&self) -> bool {
         self.redge.edges_meta[self.id.to_index()].hedge_id == HedgeId::ABSENT
             || self.hedge().radial_loop().count() <= 1
     }
 
+    /// Is there a half edge pointing to this edge?
     pub fn has_hedge(&self) -> bool {
         self.metadata().hedge_id != HedgeId::ABSENT
     }
 
     /// Only works on manifold geometry, and only on non-boundary edges.
     /// It returns the two vertices on the edge, followed by the two vertices
-    /// tranversal to it.
+    /// transversal to it.
     pub(crate) fn butterfly_vertices_ids(&self) -> [[VertId; 2]; 2] {
         let [v1, v2] = self.vertex_ids();
         let v3 = self.hedge().face_prev().source().id();
@@ -174,8 +190,12 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
     }
 }
 
+/// Relationship between the edge and a vertex id.
 pub enum EdgeVertexType {
+    /// First point in the edge.
     V1,
+    /// Second point in the edge.
     V2,
+    /// Point is not in the edge.
     NotInEdge,
 }

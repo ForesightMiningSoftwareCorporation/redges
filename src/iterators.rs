@@ -1,3 +1,4 @@
+//! Custom iterators for topology queries, such as iterating over the start of a vertex or its link.
 use std::collections::{BTreeSet, HashSet};
 
 use crate::{
@@ -5,6 +6,7 @@ use crate::{
     hedge_handle::HedgeHandle, vert_handle::VertHandle, EdgeId, FaceId, HedgeId, Redge, VertId,
 };
 
+/// Iterator around the star vertices of a given vertex.
 pub struct VertexStarVerticesIter<'r, R: RedgeContainers> {
     focused_vertex: VertId,
     iterator: VertexStarEdgesIter<'r, R>,
@@ -35,6 +37,7 @@ impl<'r, R: RedgeContainers> Iterator for VertexStarVerticesIter<'r, R> {
     }
 }
 
+/// Iterator around the edge vertices of a given vertex.
 pub struct VertexStarEdgesIter<'r, R: RedgeContainers> {
     pub(crate) start_edge: EdgeId,
     pub(crate) current_edge: EdgeId,
@@ -80,6 +83,7 @@ impl<'r, R: RedgeContainers> Iterator for VertexStarEdgesIter<'r, R> {
     }
 }
 
+/// Iterator around the link edges of a given vertex.
 // Note that the implementation of this iterator could be much faster if we assumed
 // manifold topology.
 pub struct VertexLinkEdgesIter<'r, R: RedgeContainers> {
@@ -143,6 +147,7 @@ impl<'r, R: RedgeContainers> Iterator for VertexLinkEdgesIter<'r, R> {
     }
 }
 
+/// Iterator around the faces sharing a given vertex.
 pub struct VertIncidentFacesIterator<'r, R: RedgeContainers> {
     edge_iter: VertexStarEdgesIter<'r, R>,
     current_radial_iter: RadialHedgeIter<'r, R>,
@@ -151,6 +156,7 @@ pub struct VertIncidentFacesIterator<'r, R: RedgeContainers> {
 }
 
 impl<'r, R: RedgeContainers> VertIncidentFacesIterator<'r, R> {
+    /// Construct a new iterator.
     pub fn new(vert_id: VertId, redge: &'r Redge<R>) -> Self {
         Self {
             edge_iter: VertexStarEdgesIter::new(vert_id, redge),
@@ -200,6 +206,7 @@ impl<'r, R: RedgeContainers> Iterator for VertIncidentFacesIterator<'r, R> {
     }
 }
 
+/// Iterator around the faces sharing a given vertex, faster, but assumes manifold topology.
 pub struct VertManifoldIncidentFacesIterator<'r, R: RedgeContainers> {
     last_face: FaceId,
     edge_iter: VertexStarEdgesIter<'r, R>,
@@ -207,7 +214,7 @@ pub struct VertManifoldIncidentFacesIterator<'r, R: RedgeContainers> {
 }
 
 impl<'r, R: RedgeContainers> VertManifoldIncidentFacesIterator<'r, R> {
-    pub fn new(vert_id: VertId, redge: &'r Redge<R>) -> Self {
+    pub(crate) fn new(vert_id: VertId, redge: &'r Redge<R>) -> Self {
         let vhandle = redge.vert_handle(vert_id);
 
         Self {
@@ -243,6 +250,7 @@ impl<'r, R: RedgeContainers> Iterator for VertManifoldIncidentFacesIterator<'r, 
     }
 }
 
+/// Iterator around the half edges orbiting am edge.
 pub struct RadialHedgeIter<'r, R: RedgeContainers> {
     start_hedge: HedgeId,
     current_hedge: HedgeId,
@@ -285,6 +293,7 @@ impl<'r, R: RedgeContainers> Iterator for RadialHedgeIter<'r, R> {
     }
 }
 
+/// Iterator around the half edges inside a face.
 pub struct FaceLoopHedgeIter<'r, R: RedgeContainers> {
     start_hedge: HedgeId,
     current_hedge: HedgeId,
@@ -321,6 +330,7 @@ impl<'r, R: RedgeContainers> Iterator for FaceLoopHedgeIter<'r, R> {
     }
 }
 
+/// Iterator around the vertices of a face.
 pub struct FaceVertIterator<'r, R: RedgeContainers> {
     pub(crate) face_loop: FaceLoopHedgeIter<'r, R>,
     pub(crate) _redge: &'r Redge<R>,

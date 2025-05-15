@@ -1,13 +1,11 @@
-use std::fs::File;
-use std::io::Write;
-
 use redges::container_trait::FaceAttributeGetter;
 use redges::quadric_simplification::{QuadricSimplificationConfig, SimplificationStrategy};
 use redges::VertId;
 use redges::{quadric_simplification, Redge};
-use std::time::Instant;
 
 use redges::wavefront_loader::*;
+use std::fs::File;
+use std::io::Write;
 
 pub type Vec2 = nalgebra::Vector2<f64>;
 pub type Vec3 = nalgebra::Vector3<f64>;
@@ -80,16 +78,25 @@ fn export_to_obj(vertices: &[Vec3], faces: &Vec<FaceData>, path: &str) -> std::i
     Ok(())
 }
 
+fn export_to_obj_indices(
+    vertices: &[Vec3],
+    faces: &[Vec<usize>],
+    path: &str,
+) -> std::io::Result<()> {
+    let mut file = File::create(path)?;
+    for v in vertices {
+        writeln!(file, "v {} {} {}", v.x, v.y, v.z,)?;
+    }
+
+    for face in faces.iter() {
+        writeln!(file, "f {} {} {}", face[0] + 1, face[1] + 1, face[2] + 1,)?;
+    }
+
+    Ok(())
+}
+
 fn main() {
-    // let mut obj_data = ObjData::from_disk_file("assets/suzanne.obj");
-    // let mut obj_data = ObjData::from_disk_file("assets/melodia.obj");
-    // let mut obj_data = ObjData::from_disk_file("assets/stanford_dragon.obj");
-    // let mut obj_data =
-    //     ObjData::from_disk_file("assets/rwtextured/RWT1/scene_dense_mesh_refine_texture.obj");
-    // let mut obj_data = ObjData::from_disk_file("assets/plane.obj");
-    // let mut obj_data = ObjData::from_disk_file("assets/topo.obj");
-    // let mut obj_data = ObjData::from_disk_file("assets/rwtextured/RWT6/bridge_01.obj");
-    let mut obj_data = ObjData::from_disk_file("assets/dragon.obj");
+    let mut obj_data = ObjData::from_disk_file("assets/armadillo.obj");
     if obj_data.uv_face_indices.is_empty() {
         obj_data.uvs = vec![nalgebra::Vector2::new(0., 0.)];
         obj_data.uv_face_indices = vec![vec![0; 3]; obj_data.vertex_face_indices.len()];
@@ -116,22 +123,6 @@ fn main() {
             ],
         })
         .collect();
-    // let mut faces: Vec<_> = indices
-    //     .chunks(3)
-    //     .zip(texcoords.chunks(3))
-    //     .map(|(verts, uvs_indices)| FaceData {
-    //         verts: [
-    //             VertId(verts[0] as usize),
-    //             VertId(verts[1] as usize),
-    //             VertId(verts[2] as usize),
-    //         ],
-    //         uvs: [
-    //             uvs[uvs_indices[0] as usize],
-    //             uvs[uvs_indices[1] as usize],
-    //             uvs[uvs_indices[2] as usize],
-    //         ],
-    //     })
-    //     .collect();
 
     if faces.is_empty() {
         for i in 0..obj_data.uv_face_indices.len() {
@@ -146,26 +137,73 @@ fn main() {
         }
     }
 
-    // dbg ===
     let vertices: Vec<_> = obj_data
         .vertices
         .iter()
         .map(|v| v.map(|s| s as f64))
         .collect();
+
+    let indices: Vec<_> = obj_data
+        .vertex_face_indices
+        .iter()
+        .map(|l| {
+            l.clone()
+                .into_iter()
+                .map(|i| i as usize)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    // This will take a few seconds but less than a minute.
+    println!("start simplification");
+    let (vs, fs) = simplify_example(vertices.clone(), faces.clone(), indices.clone());
+    export_to_obj(&vs, &fs, "tmp/simple_with_attributes.obj").unwrap();
+
+    println!("start simplification without attributes");
+    let (vs, indices) = simplify_example_geometry_only(vertices.clone(), indices.clone());
+    export_to_obj_indices(&vs, &indices, "tmp/simple_without_attributes.obj").unwrap();
+
+    println!("done!");
+}
+
+fn simplify_example(
+    vertices: Vec<Vec3>,
+    faces: Vec<FaceData>,
+    indices: Vec<Vec<usize>>,
+) -> (Vec<Vec3>, Vec<FaceData>) {
     let redge = Redge::<(_, _, _)>::new(
-        vertices.clone(),
+        vertices,
         (),
         faces,
-        obj_data
-            .vertex_face_indices
-            .iter()
-            .map(|l| l.clone().into_iter().map(|i| i as usize)),
+        indices.iter().map(|f| f.iter().copied()),
     );
-    let (vs, _ids, fs) = redge.to_face_list();
-    let _ = export_to_obj(&vs, &fs, "tmp/dbg_uvs_before.obj");
 
     let face_count_before = redge.face_count();
-    let start = Instant::now();
+    let redge = redge.clean_overlapping_faces();
+    let (redge, _) = quadric_simplification::quadric_simplify(
+        redge,
+        QuadricSimplificationConfig {
+            strategy: SimplificationStrategy::Conservative,
+            attribute_simplification:
+                quadric_simplification::AttributeSimplification::SimplifyAttributes,
+            target_face_count: face_count_before / 10,
+        },
+        |_, _| false,
+    );
+
+    let (vs, _ids, fs) = redge.to_face_list();
+
+    (vs, fs)
+}
+
+fn simplify_example_geometry_only(
+    vertices: Vec<Vec3>,
+    indices: Vec<Vec<usize>>,
+) -> (Vec<Vec3>, Vec<Vec<usize>>) {
+    let redge =
+        Redge::<(_, _, _)>::new(vertices, (), (), indices.iter().map(|f| f.iter().copied()));
+
+    let face_count_before = redge.face_count();
 
     let redge = redge.clean_overlapping_faces();
     let (redge, _) = quadric_simplification::quadric_simplify(
@@ -173,16 +211,13 @@ fn main() {
         QuadricSimplificationConfig {
             strategy: SimplificationStrategy::Conservative,
             attribute_simplification:
-                quadric_simplification::AttributeSimplification::SimplifyAtributes,
+                quadric_simplification::AttributeSimplification::NoAttributeSimplification,
             target_face_count: face_count_before / 10,
         },
         |_, _| false,
     );
-    let duration = start.elapsed();
-    println!("Time elapsed in simplify() is: {:?}", duration);
 
-    let (vs, _ids, fs) = redge.to_face_list();
-    let _ = export_to_obj(&vs, &fs, "tmp/dbg_uvs_after.obj");
-    std::process::exit(0);
-    //===
+    let (vs, ids, _fs) = redge.to_face_list();
+
+    (vs, ids)
 }

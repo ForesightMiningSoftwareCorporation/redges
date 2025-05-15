@@ -1,3 +1,4 @@
+//! Wrapper to enable destructive operations on a radial edge.
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Index,
@@ -45,6 +46,7 @@ macro_rules! compact_mesh_data {
     };
 }
 
+/// Wrapper around a radial edge, enabling destructive operations.
 pub struct MeshDeleter<R: RedgeContainers> {
     pub(crate) mesh: Redge<R>,
     deleted_verts: usize,
@@ -52,13 +54,14 @@ pub struct MeshDeleter<R: RedgeContainers> {
     deleted_faces: usize,
 }
 
-type FragmetnationMaps = (
+type FragmentationMaps = (
     HashMap<VertId, usize>,
     HashMap<EdgeId, usize>,
     HashMap<HedgeId, usize>,
     HashMap<FaceId, usize>,
 );
 impl<R: RedgeContainers> MeshDeleter<R> {
+    /// Construct a deleter and hold the radial edge hostage until done.
     pub fn start_deletion(mesh: Redge<R>) -> Self {
         Self {
             mesh,
@@ -68,29 +71,30 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         }
     }
 
+    /// Finish deleting and release the hostage radial edge.
     pub fn end_deletion(mut self) -> Redge<R> {
         let (vert_frag, edge_frag, hedge_frag, face_frag) = self.compute_fragmentation_maps();
         self.apply_defragmentation_maps(vert_frag, edge_frag, hedge_frag, face_frag);
         self.mesh
     }
-
+    /// Get the underlying radial edge, use with care.
     pub fn mesh(&mut self) -> &mut Redge<R> {
         &mut self.mesh
     }
-
+    /// Count of *actual* active vertices (i.e. after removing deleted ones).
     pub fn active_vert_count(&self) -> usize {
         self.mesh.vert_count() - self.deleted_verts
     }
-
+    /// Count of *actual* active edges (i.e. after removing deleted ones).
     pub fn active_edge_count(&self) -> usize {
         self.mesh.edge_count() - self.deleted_edges
     }
-
+    /// Count of *actual* active faces (i.e. after removing deleted ones).
     pub fn active_face_count(&self) -> usize {
         self.mesh.face_count() - self.deleted_faces
     }
-
-    pub fn compute_fragmentation_maps(&self) -> FragmetnationMaps {
+    /// Maps between old ids and ids after applying defragmentation.
+    pub fn compute_fragmentation_maps(&self) -> FragmentationMaps {
         let mut vertex_fragmentation = HashMap::<VertId, usize>::new();
         let mut counter = 0;
         for v in self.mesh.verts_meta.iter() {
@@ -214,6 +218,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         self.mesh.hedges_meta.truncate(count);
     }
 
+    /// Remove a face from the underlying radial edge.
     pub fn remove_face(&mut self, face_id: FaceId) {
         let face_hedges: Vec<_> = self
             .mesh
@@ -240,6 +245,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         self.deleted_faces += 1;
     }
 
+    /// Remove an edge from the underlying radial edge.
     pub fn remove_edge(&mut self, edge_id: EdgeId) {
         let edge_handle = self.mesh.edge_handle(edge_id);
         let incident_faces: Vec<_> = if edge_handle.has_hedge() {
@@ -288,6 +294,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         self.deleted_edges += 1;
     }
 
+    /// Remove a vertex from the underlying radial edge.
     pub fn remove_vert(&mut self, vert_id: VertId) {
         let faces_to_remove: Vec<_> = self
             .mesh
@@ -339,7 +346,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
     //
     // If you plan on modifying this function please read `docs/redge.pdf`.
     //
-    /// Currently only works for triangular faces.
+    /// Collapse an edge.
+    /// Warning: Currently only works for triangular faces.
     fn collapse_edge<S>(&mut self, edge_id: EdgeId) -> VertId
     where
         VertData<R>: Index<usize, Output = S>,
@@ -432,6 +440,8 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         v1
     }
 
+    /// Collapse an edge, and fix any created degenerate faces.
+    /// Warning: Currently only works for triangular faces.
     pub fn collapse_edge_and_fix<S>(&mut self, edge_id: EdgeId) -> VertId
     where
         VertData<R>: Index<usize, Output = S>,
@@ -519,6 +529,7 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         vid
     }
 
+    /// Re-associate faces with their new vertex ids.
     pub fn update_face_corners<S: RealField>(&mut self, vid: VertId)
     where
         FaceData<R>: FaceAttributeGetter<S>,
