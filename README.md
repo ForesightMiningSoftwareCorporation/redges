@@ -112,15 +112,15 @@ let vid = deleter.collapse_edge_and_fix(eid);
 deleter.remove_vert(vid);  
 
 // Find the map from old to new vertex ids then finish deleting.
-// This will recompute elements to live in continous memory and ids.  
+// This will recompute elements to live in continuous memory and ids.  
 let (vert_frag, ..) = deleter.compute_fragmentation_maps();
 let mut res = deleter.end_deletion();
  ```
    
 The following invariants are maintained:  
-- Before starting a seuqence of deletion operations, all elements in a radial edge are guaranteed to live in contiguous memory and have contiguous ids.
+- Before starting a sequence of deletion operations, all elements in a radial edge are guaranteed to live in contiguous memory and have contiguous ids.
 - During deletion, elements retain their old ids, deleted elements are marked and the user is expected to check if a given id is valid through `handle.is_valid()` before performing queries.
-- After deleting, the user must call `deleter.end_deletion()` to recouperate the underlying radial edge. This operation will drop the deleter and defragment *all* geometry, computing new ids for the new elements. After this call, all prior ids should be considered invalid and *must not* be used for future queries.
+- After deleting, the user must call `deleter.end_deletion()` to recuperate the underlying radial edge. This operation will drop the deleter and defragment *all* geometry, computing new ids for the new elements. After this call, all prior ids should be considered invalid and *must not* be used for future queries.
 - If old ids are still needed after deletion, then `deleter.compute_fragmentation_maps()` *must* be called *before* ending deletion. This will return maps from the old ids prior to defragmentation to their new ids after defragmentation. These maps must be used to update any stored ids, failure to do so will result in bugs.
 
 ![FSL Logo](images/fsl_logo.svg "Fsl Logo")
