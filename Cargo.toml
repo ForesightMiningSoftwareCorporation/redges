@@ -3,7 +3,6 @@ name = "redges"
 version = "0.1.1"
 edition = "2021"
 license = "Apache-2.0 OR Custom"
-publish = ["foresight-mining-software-corporation"]
 authors = ["Camilo Talero <camilo.talero@fslabs.ca>"]
 
 [dependencies]
