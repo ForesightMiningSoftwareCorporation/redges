@@ -4,6 +4,7 @@ version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0 OR Custom"
 authors = ["Camilo Talero <camilo.talero@fslabs.ca>"]
+description = "A radial edge is a data structure for topological operations."
 
 [dependencies]
 linear_isomorphic = "0.2.4"
