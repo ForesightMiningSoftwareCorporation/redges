@@ -28,5 +28,6 @@ inherits = "release"
 debug = true
 
 [package.metadata.fslabs.publish.cargo]
+allow_public = true
 publish = true
 
