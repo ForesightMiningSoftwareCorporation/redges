@@ -2,7 +2,7 @@
 name = "redges"
 version = "0.2.0"
 edition = "2021"
-license = "Apache-2.0 OR Custom"
+license-file = "LICENSE.md"
 authors = ["Camilo Talero <camilo.talero@fslabs.ca>"]
 description = "A radial edge is a data structure for topological operations."
 
