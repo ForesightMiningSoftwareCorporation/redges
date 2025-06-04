@@ -4,7 +4,10 @@
 // TODO: For all handles and iterators that can panic, add a fallible API
 // wrapper that won't crash.
 
-use std::{collections::BTreeMap, ops::Mul};
+use std::{
+    collections::{BTreeMap, HashSet},
+    ops::Mul,
+};
 
 pub mod algorithms;
 pub mod container_trait;
@@ -123,9 +126,19 @@ impl<R: RedgeContainers> Redge<R> {
         let mut hedges_meta = Vec::new();
         let mut faces_meta = Vec::new();
 
+        let mut seen_faces = HashSet::new();
         // 2. Create all needed edges, faces and hedges. (Set up some of the pointers)
         for face in faces {
             let face_vertices = face.collect::<Vec<_>>();
+
+            // Do not add a face with the exact same vertices as a priorly seen face.
+            // This is all sorts of annoying to deal with.
+            let mut face_key = face_vertices.clone();
+            face_key.sort();
+            if !seen_faces.insert(face_key) {
+                continue;
+            }
+
             let face_index = faces_meta.len();
             faces_meta.push(FaceMetaData {
                 id: FaceId(faces_meta.len()),
