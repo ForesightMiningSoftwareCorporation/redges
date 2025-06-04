@@ -504,6 +504,12 @@ impl<R: RedgeContainers> MeshDeleter<R> {
             digon_holes_to_edge(digons, &mut self.mesh);
         }
 
+        self.clean_doppleganger_faces(vid);
+
+        vid
+    }
+
+    fn clean_doppleganger_faces(&mut self, vid: VertId) {
         // Find all faces which overlap in space (i.e. identical faces).
         let dihedron_faces: Vec<_> = self
             .mesh
@@ -525,8 +531,6 @@ impl<R: RedgeContainers> MeshDeleter<R> {
         for victim_dihedron in victim_dihedron_faces {
             self.remove_face(victim_dihedron);
         }
-
-        vid
     }
 
     /// Re-associate faces with their new vertex ids.
