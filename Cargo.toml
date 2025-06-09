@@ -1,6 +1,6 @@
 [package]
 name = "redges"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license-file = "LICENSE.md"
 authors = ["Camilo Talero <camilo.talero@fslabs.ca>"]
@@ -31,4 +31,3 @@ debug = true
 [package.metadata.fslabs.publish.cargo]
 allow_public = true
 publish = true
-
