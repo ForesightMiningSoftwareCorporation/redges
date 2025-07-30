@@ -653,7 +653,12 @@ impl<R: RedgeContainers> Redge<R> {
         // Fetch the (assumed) two half edges parallel to this edge, the first with source at `source`.
         let innit_both_half_edges = |edge: EdgeId, source: VertId, mesh: &mut Self| {
             let v1 = source;
-            let v2 = mesh.edges_meta[edge.to_index()].vert_ids.iter().copied().find(|vid| (*vid) != source).unwrap();
+            let v2 = mesh.edges_meta[edge.to_index()]
+                .vert_ids
+                .iter()
+                .copied()
+                .find(|vid| (*vid) != source)
+                .unwrap();
             let h1_id = mesh.add_hedge(v1);
             let h2_id = mesh.add_hedge(v2);
 
@@ -671,17 +676,14 @@ impl<R: RedgeContainers> Redge<R> {
         };
 
         // Add three new edges to connect them to the center.
-        let new_edge1 =
-            self.add_edge([vn_id, v1], edata.clone());
+        let new_edge1 = self.add_edge([vn_id, v1], edata.clone());
 
         let [nh1, np1] = innit_both_half_edges(new_edge1, vn_id, self);
 
-        let new_edge2 =
-            self.add_edge([vn_id, v2], edata.clone());
+        let new_edge2 = self.add_edge([vn_id, v2], edata.clone());
         let [nh2, np2] = innit_both_half_edges(new_edge2, vn_id, self);
 
-        let new_edge3 =
-            self.add_edge([vn_id, v3], edata.clone());
+        let new_edge3 = self.add_edge([vn_id, v3], edata.clone());
         let [nh3, np3] = innit_both_half_edges(new_edge3, vn_id, self);
 
         let fdata = self.face_data(fid).clone();
