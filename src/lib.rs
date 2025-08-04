@@ -620,6 +620,86 @@ impl<R: RedgeContainers> Redge<R> {
         vn
     }
 
+    /// Only works for triangular faces. It will create a new vertex at the center
+    /// of the face then create two new additional faces and a few edges and half edges
+    /// to connect them. Effectively creates a triangle fan within the input face.
+    pub fn split_triangle_face<S>(&mut self, fid: FaceId) -> VertId
+    where
+        S: RealField + Mul<VertData<R>, Output = VertData<R>>,
+        VertData<R>: InnerSpace<S>,
+    {
+        // Fetch all elemnts before tampering with the mesh.
+        let e1 = self.faces_meta[fid.to_index()].hedge_id;
+        let e2 = self.hedges_meta[e1.to_index()].face_next_id;
+        let e3 = self.hedges_meta[e2.to_index()].face_next_id;
+
+        let v1 = self.hedges_meta[e1.to_index()].source_id;
+        let v2 = self.hedges_meta[e2.to_index()].source_id;
+        let v3 = self.hedges_meta[e3.to_index()].source_id;
+
+        let v1_data = self.vert_data(v1).clone();
+        let v2_data = self.vert_data(v2).clone();
+        let v3_data = self.vert_data(v3).clone();
+
+        let edge_id = self.hedges_meta[e1.to_index()].edge_id;
+
+        let vdata = (v1_data + v2_data + v3_data) * S::from(1.0 / 3.0).unwrap();
+
+        // New vertex at the center of the face.
+        let vn_id = self.add_vert(vdata);
+
+        let edata = self.edge_data(edge_id).clone();
+
+        // Fetch the (assumed) two half edges parallel to this edge, the first with source at `source`.
+        let innit_both_half_edges = |edge: EdgeId, source: VertId, mesh: &mut Self| {
+            let v1 = source;
+            let v2 = mesh.edges_meta[edge.to_index()]
+                .vert_ids
+                .iter()
+                .copied()
+                .find(|vid| (*vid) != source)
+                .unwrap();
+            let h1_id = mesh.add_hedge(v1);
+            let h2_id = mesh.add_hedge(v2);
+
+            let h1 = &mut mesh.hedges_meta[h1_id.to_index()];
+            h1.edge_id = edge;
+            h1.radial_prev_id = h2_id;
+            h1.radial_next_id = h2_id;
+
+            let h2 = &mut mesh.hedges_meta[h2_id.to_index()];
+            h2.edge_id = edge;
+            h2.radial_prev_id = h2_id;
+            h2.radial_next_id = h2_id;
+
+            [h1_id, h2_id]
+        };
+
+        // Add three new edges to connect them to the center.
+        let new_edge1 = self.add_edge([vn_id, v1], edata.clone());
+
+        let [nh1, np1] = innit_both_half_edges(new_edge1, vn_id, self);
+
+        let new_edge2 = self.add_edge([vn_id, v2], edata.clone());
+        let [nh2, np2] = innit_both_half_edges(new_edge2, vn_id, self);
+
+        let new_edge3 = self.add_edge([vn_id, v3], edata.clone());
+        let [nh3, np3] = innit_both_half_edges(new_edge3, vn_id, self);
+
+        let fdata = self.face_data(fid).clone();
+
+        let f1_id = fid;
+        let f2_id = self.add_face(fdata.clone());
+        let f3_id = self.add_face(fdata.clone());
+
+        // Attach the half edges to their new face.
+        link_face(&[nh1, e1, np2], f1_id, self);
+        link_face(&[nh2, e2, np3], f2_id, self);
+        link_face(&[nh3, e3, np1], f3_id, self);
+
+        vn_id
+    }
+
     /// Add a vertex to the Redge.
     pub(crate) fn add_vert(&mut self, data: VertData<R>) -> VertId {
         self.vert_data.push(data);
@@ -846,6 +926,32 @@ mod tests {
     use wavefront_loader::ObjData;
 
     use super::*;
+
+    // #[test]
+    fn _test_face_split() {
+        let ObjData {
+            vertices,
+            vertex_face_indices,
+            ..
+        } = ObjData::from_disk_file("assets/loop_cube.obj");
+
+        let mut redge = Redge::<(_, _, _)>::new(
+            vertices,
+            (),
+            (),
+            vertex_face_indices
+                .iter()
+                .map(|f| f.iter().map(|&i| i as usize)),
+        );
+
+        let (vs, fs, _) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/before_face_split.obj");
+
+        redge.split_triangle_face(FaceId(0));
+
+        let (vs, fs, _) = redge.to_face_list();
+        ObjData::export(&(&vs, &fs), "out/after_face_split.obj");
+    }
 
     // #[test]
     fn _test_edge_flip() {
