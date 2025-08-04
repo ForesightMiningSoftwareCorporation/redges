@@ -1,4 +1,4 @@
-## 0.2.0
+## 0.2.2
 
 - Added face splitting, see `split_triangle_face` for details.
 
