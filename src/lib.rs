@@ -628,6 +628,11 @@ impl<R: RedgeContainers> Redge<R> {
         S: RealField + Mul<VertData<R>, Output = VertData<R>>,
         VertData<R>: InnerSpace<S>,
     {
+        debug_assert!(
+            self.face_handle(fid).hedge().face_loop().count() == 3,
+            "Pasing non triangular face to triangle only method."
+        );
+
         // Fetch all elemnts before tampering with the mesh.
         let e1 = self.faces_meta[fid.to_index()].hedge_id;
         let e2 = self.hedges_meta[e1.to_index()].face_next_id;
