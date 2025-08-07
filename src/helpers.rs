@@ -531,8 +531,6 @@ pub(crate) fn split_hedge<R: RedgeContainers>(
     mesh.hedges_meta[n1.to_index()].edge_id = et;
     mesh.hedges_meta[n2.to_index()].edge_id = et;
 
-    mesh.edges_meta[et.to_index()].hedge_id = n1;
-
     join_vertex_cycles(edge_at_t, et, mesh);
 
     ([n3, h1], et)
