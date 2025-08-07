@@ -95,8 +95,6 @@ pub enum HedgeCorrectness {
     /// The radial chain has more than 100 elements. This is not, strictly speaking, an error
     /// but it's extremely suspicious.
     LongRadialChain(HedgeId),
-    /// There is a chain of edges where some are boundary edges and some are not.
-    InconsistentBoundary,
 }
 
 /// If this returns `Correct` then it is safe to create handles.
@@ -291,9 +289,7 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
 
         let mut current = hedge.id;
         let mut iter_count = 0;
-        let mut boundary_count = 0;
         loop {
-            boundary_count += mesh.hedges_meta[current.to_index()].face_id.is_absent() as u32;
             if current == HedgeId::ABSENT {
                 return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::RadialChainIsBroken);
             }
@@ -310,14 +306,8 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
             iter_count += 1;
         }
 
-        if iter_count > 100 && boundary_count == 0 {
-            println!("{} {}", boundary_count, iter_count);
-
+        if iter_count > 100 {
             return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::LongRadialChain(hedge.id));
-        }
-
-        if boundary_count != 0 && boundary_count != iter_count {
-            return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::InconsistentBoundary);
         }
     }
 
