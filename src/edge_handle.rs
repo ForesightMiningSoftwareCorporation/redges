@@ -48,8 +48,9 @@ impl<'r, R: RedgeContainers> EdgeHandle<'r, R> {
         VertHandle::new(self.metadata().vert_ids[1], self.redge)
     }
 
-    /// Handle to *a* half edge incident ont hsi edge.
+    /// Handle to *a* half edge incident on this edge.
     pub fn hedge(&self) -> HedgeHandle<'r, R> {
+        debug_assert!(self.has_hedge());
         HedgeHandle::new(self.metadata().hedge_id, self.redge)
     }
 

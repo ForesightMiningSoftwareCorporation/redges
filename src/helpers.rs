@@ -287,7 +287,7 @@ pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(
             return Some((vert1, s1, s2));
         }
         if let Some((s1, s2)) = check_edge_set(vert2) {
-            return Some((vert1, s1, s2));
+            return Some((vert2, s1, s2));
         }
     }
 

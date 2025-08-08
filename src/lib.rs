@@ -679,6 +679,8 @@ impl<R: RedgeContainers> Redge<R> {
             h2.radial_next_id = h1_id;
             h2.source_id = v2;
 
+            mesh.edges_meta[edge.to_index()].hedge_id = h1_id;
+
             [h1_id, h2_id]
         };
 
@@ -717,6 +719,10 @@ impl<R: RedgeContainers> Redge<R> {
         join_vertex_cycles(e2, new_edge3, self);
         join_vertex_cycles(e3, new_edge1, self);
 
+        self.verts_meta[vn_id.to_index()].edge_id = new_edge1;
+
+        debug_assert!(correctness_state(self) == RedgeCorrectness::Correct);
+
         vn_id
     }
 
@@ -752,8 +758,13 @@ impl<R: RedgeContainers> Redge<R> {
             is_active: true,
         });
 
-        self.verts_meta[vert_ids[0].to_index()].edge_id = id;
-        self.verts_meta[vert_ids[1].to_index()].edge_id = id;
+        if self.verts_meta[vert_ids[0].to_index()].edge_id == EdgeId::ABSENT {
+            self.verts_meta[vert_ids[0].to_index()].edge_id = id;
+        }
+
+        if self.verts_meta[vert_ids[1].to_index()].edge_id == EdgeId::ABSENT {
+            self.verts_meta[vert_ids[1].to_index()].edge_id = id;
+        }
 
         id
     }
