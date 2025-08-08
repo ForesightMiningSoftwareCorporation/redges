@@ -12,14 +12,12 @@ use std::{
 };
 
 use linear_isomorphic::{InnerSpace, RealField};
-use nalgebra::Vector3;
 use num::{Bounded, Signed};
 use rstar::RTree;
 
 use crate::{
     container_trait::{PrimitiveContainer, RedgeContainers, VertData},
     helpers::check_edge_vertex_cycles,
-    wavefront_loader::ObjData,
     EdgeId, Endpoint, HedgeId, Redge, VertId,
 };
 
