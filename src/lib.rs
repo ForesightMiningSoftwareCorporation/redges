@@ -633,7 +633,7 @@ impl<R: RedgeContainers> Redge<R> {
             "Pasing non triangular face to triangle only method."
         );
 
-        // Fetch all elemnts before tampering with the mesh.
+        // Fetch all elements before tampering with the mesh.
         let e1 = self.faces_meta[fid.to_index()].hedge_id;
         let e2 = self.hedges_meta[e1.to_index()].face_next_id;
         let e3 = self.hedges_meta[e2.to_index()].face_next_id;
@@ -671,18 +671,21 @@ impl<R: RedgeContainers> Redge<R> {
             h1.edge_id = edge;
             h1.radial_prev_id = h2_id;
             h1.radial_next_id = h2_id;
+            h1.source_id = v1;
 
             let h2 = &mut mesh.hedges_meta[h2_id.to_index()];
             h2.edge_id = edge;
-            h2.radial_prev_id = h2_id;
-            h2.radial_next_id = h2_id;
+            h2.radial_prev_id = h1_id;
+            h2.radial_next_id = h1_id;
+            h2.source_id = v2;
+
+            mesh.edges_meta[edge.to_index()].hedge_id = h1_id;
 
             [h1_id, h2_id]
         };
 
         // Add three new edges to connect them to the center.
         let new_edge1 = self.add_edge([vn_id, v1], edata.clone());
-
         let [nh1, np1] = innit_both_half_edges(new_edge1, vn_id, self);
 
         let new_edge2 = self.add_edge([vn_id, v2], edata.clone());
@@ -701,6 +704,24 @@ impl<R: RedgeContainers> Redge<R> {
         link_face(&[nh1, e1, np2], f1_id, self);
         link_face(&[nh2, e2, np3], f2_id, self);
         link_face(&[nh3, e3, np1], f3_id, self);
+
+        // Attach edge cycles at the new vertex.
+        self.verts_meta[vn_id.to_index()].edge_id = new_edge1;
+        join_vertex_cycles(new_edge1, new_edge2, self);
+        join_vertex_cycles(new_edge2, new_edge3, self);
+
+        let e1 = self.hedges_meta[e1.to_index()].edge_id;
+        let e2 = self.hedges_meta[e2.to_index()].edge_id;
+        let e3 = self.hedges_meta[e3.to_index()].edge_id;
+
+        // Attach edge cycles on the prior existing vertices
+        join_vertex_cycles(e1, new_edge2, self);
+        join_vertex_cycles(e2, new_edge3, self);
+        join_vertex_cycles(e3, new_edge1, self);
+
+        self.verts_meta[vn_id.to_index()].edge_id = new_edge1;
+
+        debug_assert!(correctness_state(self) == RedgeCorrectness::Correct);
 
         vn_id
     }
@@ -736,6 +757,14 @@ impl<R: RedgeContainers> Redge<R> {
             },
             is_active: true,
         });
+
+        if self.verts_meta[vert_ids[0].to_index()].edge_id == EdgeId::ABSENT {
+            self.verts_meta[vert_ids[0].to_index()].edge_id = id;
+        }
+
+        if self.verts_meta[vert_ids[1].to_index()].edge_id == EdgeId::ABSENT {
+            self.verts_meta[vert_ids[1].to_index()].edge_id = id;
+        }
 
         id
     }

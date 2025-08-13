@@ -287,7 +287,7 @@ pub(crate) fn check_edge_vertex_cycles<R: RedgeContainers>(
             return Some((vert1, s1, s2));
         }
         if let Some((s1, s2)) = check_edge_set(vert2) {
-            return Some((vert1, s1, s2));
+            return Some((vert2, s1, s2));
         }
     }
 
@@ -530,8 +530,6 @@ pub(crate) fn split_hedge<R: RedgeContainers>(
     mesh.edges_meta[et.to_index()].hedge_id = n1;
     mesh.hedges_meta[n1.to_index()].edge_id = et;
     mesh.hedges_meta[n2.to_index()].edge_id = et;
-
-    mesh.edges_meta[et.to_index()].hedge_id = n1;
 
     join_vertex_cycles(edge_at_t, et, mesh);
 

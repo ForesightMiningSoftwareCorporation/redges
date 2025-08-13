@@ -92,7 +92,7 @@ pub enum HedgeCorrectness {
     EdgeIsAbsent,
     /// The radial chain has more than 100 elements. This is not, strictly speaking, an error
     /// but it's extremely suspicious.
-    LongRadialChain,
+    LongRadialChain(HedgeId),
 }
 
 /// If this returns `Correct` then it is safe to create handles.
@@ -305,7 +305,7 @@ pub fn correctness_state<R: RedgeContainers>(mesh: &Redge<R>) -> RedgeCorrectnes
         }
 
         if iter_count > 100 {
-            return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::LongRadialChain);
+            return RedgeCorrectness::InvalidHedge(i, HedgeCorrectness::LongRadialChain(hedge.id));
         }
     }
 
