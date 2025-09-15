@@ -910,7 +910,8 @@ where
     )
 }
 
-fn edge_cost_without_attributes<'r, S, R: RedgeContainers>(
+/// Compute the QEM error of an edge, ignoring attributes.
+pub fn edge_cost_without_attributes<'r, S, R: RedgeContainers>(
     edge: &EdgeHandle<'r, R>,
 ) -> (S, S, Vector3<S>)
 where
