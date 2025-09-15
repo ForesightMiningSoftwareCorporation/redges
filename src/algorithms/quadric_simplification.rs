@@ -313,23 +313,19 @@ where
         }
     }
 
-    match config.stop_condition {
-        StopCondition::FaceCount(target_face_count) => {
-            // Doing edge collapse after a certain point is very challenging, as a compromise,
-            // if we reach here, and if we need a smaller mesh, we will just delete faces, if anyone wants
-            // to try making an edge collapse that works no matter the situation you have my blessing.
-            while deleter.active_face_count() > target_face_count
-                && config.strategy == SimplificationStrategy::Aggressive
-            {
-                let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
-                if let Some(f) = face {
-                    deleter.remove_face(f.id);
-                }
+    if let StopCondition::FaceCount(target_face_count) = config.stop_condition {
+        // Doing edge collapse after a certain point is very challenging, as a compromise,
+        // if we reach here, and if we need a smaller mesh, we will just delete faces, if anyone wants
+        // to try making an edge collapse that works no matter the situation you have my blessing.
+        while deleter.active_face_count() > target_face_count
+            && config.strategy == SimplificationStrategy::Aggressive
+        {
+            let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
+            if let Some(f) = face {
+                deleter.remove_face(f.id);
             }
         }
-
-        _ => {}
-    };
+    }
 
     let (vert_frag, ..) = deleter.compute_fragmentation_maps();
     let mut res = deleter.end_deletion();
@@ -484,23 +480,19 @@ where
         }
     }
 
-    match config.stop_condition {
-        StopCondition::FaceCount(target_face_count) => {
-            // Doing edge collapse after a certain point is very challenging, as a compromise,
-            // if we reach here, and if we need a smaller mesh, we will just delete faces, if anyone wants
-            // to try making an edge collapse that works no matter the situation you have my blessing.
-            while deleter.active_face_count() > target_face_count
-                && config.strategy == SimplificationStrategy::Aggressive
-            {
-                let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
-                if let Some(f) = face {
-                    deleter.remove_face(f.id);
-                }
+    if let StopCondition::FaceCount(target_face_count) = config.stop_condition {
+        // Doing edge collapse after a certain point is very challenging, as a compromise,
+        // if we reach here, and if we need a smaller mesh, we will just delete faces, if anyone wants
+        // to try making an edge collapse that works no matter the situation you have my blessing.
+        while deleter.active_face_count() > target_face_count
+            && config.strategy == SimplificationStrategy::Aggressive
+        {
+            let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
+            if let Some(f) = face {
+                deleter.remove_face(f.id);
             }
         }
-
-        _ => {}
-    };
+    }
 
     let (vert_frag, ..) = deleter.compute_fragmentation_maps();
     let mut res = deleter.end_deletion();
