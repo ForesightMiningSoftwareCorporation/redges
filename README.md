@@ -43,8 +43,8 @@ Additive editing includes operations such as edge flipping, edge splitting, addi
 
 And example of loading a mesh and inserting new elements through edge_splitting can be seen here:
 
-
-```rust
+```ignore
+use redges::{wavefront_loader::ObjData, Redge};
 // Load mesh data
 let mut obj_data = ObjData::from_disk_file("assets/armadillo.obj");
 let vertices: Vec<_> = obj_data
@@ -68,7 +68,7 @@ let indices: Vec<_> = obj_data
 let redge = Redge::<(_, _, _)>::new(
     vertices,
     (),
-    faces,
+    (),
     indices.iter().map(|f| f.iter().copied()),
 );
 
@@ -88,11 +88,10 @@ Additive editing maintains the following invariants:
 
 Additionally, unlike additive operations, destructive operations can break the mesh in a myriad ways and require a lot of attention and care to preserve topology invariants. The deleter helps to more easily identify code snippets where bugs are more likely to occur.
 
- ```rust
+ ```ignore
 // Start destructive operations, the mesh will be captured.
-let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
-
- let edge_handle = deleter.mesh().edge_handle(eid);
+let mut deleter = crate::redges::mesh_deleter::MeshDeleter::start_deletion(mesh);
+let edge_handle = deleter.mesh().edge_handle(eid);
 
 // Check for inactive edges.
 if !edge_handle.is_active() {
