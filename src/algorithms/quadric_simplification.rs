@@ -166,7 +166,7 @@ where
             StopCondition::FaceCount(target_face_count) => {
                 deleter.active_face_count() <= target_face_count
             }
-            StopCondition::ErrorThreshold(threshold) => cost <= S::from(threshold).unwrap(),
+            StopCondition::ErrorThreshold(threshold) => cost >= S::from(threshold).unwrap(),
         } {
             break;
         }
@@ -382,7 +382,7 @@ where
             StopCondition::FaceCount(target_face_count) => {
                 deleter.active_face_count() <= target_face_count
             }
-            StopCondition::ErrorThreshold(threshold) => cost <= S::from(threshold).unwrap(),
+            StopCondition::ErrorThreshold(threshold) => cost >= S::from(threshold).unwrap(),
         } {
             break;
         }
