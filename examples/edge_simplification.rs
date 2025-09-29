@@ -1,5 +1,7 @@
 use redges::container_trait::FaceAttributeGetter;
-use redges::quadric_simplification::{QuadricSimplificationConfig, SimplificationStrategy};
+use redges::quadric_simplification::{
+    QuadricSimplificationConfig, SimplificationStrategy, StopCondition,
+};
 use redges::VertId;
 use redges::{quadric_simplification, Redge};
 
@@ -186,7 +188,7 @@ fn simplify_example(
             strategy: SimplificationStrategy::Conservative,
             attribute_simplification:
                 quadric_simplification::AttributeSimplification::SimplifyAttributes,
-            target_face_count: face_count_before / 10,
+            stop_condition: StopCondition::FaceCount(face_count_before / 10),
         },
         |_, _| false,
     );
@@ -212,7 +214,7 @@ fn simplify_example_geometry_only(
             strategy: SimplificationStrategy::Conservative,
             attribute_simplification:
                 quadric_simplification::AttributeSimplification::NoAttributeSimplification,
-            target_face_count: face_count_before / 10,
+            stop_condition: StopCondition::FaceCount(face_count_before / 10),
         },
         |_, _| false,
     );

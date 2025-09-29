@@ -3,7 +3,9 @@ use std::fs::File;
 use std::io::Write;
 
 use redges::container_trait::FaceAttributeGetter;
-use redges::quadric_simplification::{QuadricSimplificationConfig, SimplificationStrategy};
+use redges::quadric_simplification::{
+    QuadricSimplificationConfig, SimplificationStrategy, StopCondition,
+};
 use redges::VertId;
 use redges::{quadric_simplification, Redge};
 use std::time::Instant;
@@ -171,7 +173,7 @@ fn main() {
             strategy: SimplificationStrategy::Conservative,
             attribute_simplification:
                 quadric_simplification::AttributeSimplification::SimplifyAttributes,
-            target_face_count: face_count_before / 10,
+            stop_condition: StopCondition::FaceCount(face_count_before / 10),
         },
         |_, _| false,
     );

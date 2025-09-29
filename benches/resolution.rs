@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use nalgebra::Vector3;
+use quadric_simplification::StopCondition;
 use redges::algorithms::remeshing::incremental_refinement_with_context;
 use redges::algorithms::remeshing::RemeshingContext;
 use redges::algorithms::remeshing::RemeshingParametersWithoutCollapse;
@@ -198,7 +199,7 @@ fn simplification_benchmark(c: &mut Criterion) {
                     strategy: SimplificationStrategy::Conservative,
                     attribute_simplification:
                         quadric_simplification::AttributeSimplification::NoAttributeSimplification,
-                    target_face_count: face_count_before / 10,
+                    stop_condition: StopCondition::FaceCount(face_count_before / 10),
                 },
                 |_, _| false,
             );

@@ -44,14 +44,22 @@ pub enum AttributeSimplification {
     /// Use attributes in simplification.
     SimplifyAttributes,
 }
+/// What strategy to use to decide to stop simplificaiton.
+pub enum StopCondition {
+    /// Stop when a specified face cound is reached.
+    FaceCount(usize),
+    /// Stop when the error fals below this value.
+    ErrorThreshold(f32),
+}
+
 /// Meta data to configure the simplification strategy.
 pub struct QuadricSimplificationConfig {
     /// Whether to simplify aggressively or conservatively.
     pub strategy: SimplificationStrategy,
     /// Whether to consider attributes during simplification.
     pub attribute_simplification: AttributeSimplification,
-    /// Target number of faces to reach.
-    pub target_face_count: usize,
+    /// Specify when the simplificaitn should stop.
+    pub stop_condition: StopCondition,
 }
 
 impl Default for QuadricSimplificationConfig {
@@ -59,7 +67,7 @@ impl Default for QuadricSimplificationConfig {
         Self {
             strategy: SimplificationStrategy::Conservative,
             attribute_simplification: AttributeSimplification::NoAttributeSimplification,
-            target_face_count: 10_000,
+            stop_condition: StopCondition::FaceCount(10_000),
         }
     }
 }
@@ -141,7 +149,7 @@ where
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
     let mut worst_cost = <S as Float>::min_value();
-    while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
+    while !queue.is_empty() {
         let (
             QueueEdgeAttributeData {
                 id: eid,
@@ -152,6 +160,16 @@ where
             },
             cost,
         ) = queue.pop().unwrap();
+
+        // Check if the simplification has reached its goal.
+        if match config.stop_condition {
+            StopCondition::FaceCount(target_face_count) => {
+                deleter.active_face_count() <= target_face_count
+            }
+            StopCondition::ErrorThreshold(threshold) => cost >= S::from(threshold).unwrap(),
+        } {
+            break;
+        }
 
         let edge_handle = deleter.mesh().edge_handle(eid);
 
@@ -295,15 +313,17 @@ where
         }
     }
 
-    // Doing edge collapse after a certain point is very challenging, as a compromise,
-    // if we reach here, and if we need a smaller mesh, we will just delete faces, if anyone wants
-    // to try making an edge collapse that works no matter the situation you have my blessing.
-    while deleter.active_face_count() > config.target_face_count
-        && config.strategy == SimplificationStrategy::Aggressive
-    {
-        let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
-        if let Some(f) = face {
-            deleter.remove_face(f.id);
+    if let StopCondition::FaceCount(target_face_count) = config.stop_condition {
+        // Doing edge collapse after a certain point is very challenging, as a compromise,
+        // if we reach here, and if we need a smaller mesh, we will just delete faces, if anyone wants
+        // to try making an edge collapse that works no matter the situation you have my blessing.
+        while deleter.active_face_count() > target_face_count
+            && config.strategy == SimplificationStrategy::Aggressive
+        {
+            let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
+            if let Some(f) = face {
+                deleter.remove_face(f.id);
+            }
         }
     }
 
@@ -347,7 +367,7 @@ where
     let mut deleter = crate::mesh_deleter::MeshDeleter::start_deletion(mesh);
 
     let mut worst_cost = <S as Float>::min_value();
-    while !queue.is_empty() && deleter.active_face_count() > config.target_face_count {
+    while !queue.is_empty() {
         let (
             QueueEdgeSimpleData {
                 id: eid,
@@ -356,6 +376,16 @@ where
             },
             cost,
         ) = queue.pop().unwrap();
+
+        // Check if the simplification has reached its goal.
+        if match config.stop_condition {
+            StopCondition::FaceCount(target_face_count) => {
+                deleter.active_face_count() <= target_face_count
+            }
+            StopCondition::ErrorThreshold(threshold) => cost >= S::from(threshold).unwrap(),
+        } {
+            break;
+        }
 
         let edge_handle = deleter.mesh().edge_handle(eid);
 
@@ -450,15 +480,17 @@ where
         }
     }
 
-    // Doing edge collapse after a certain point is very challenging, as a compromise,
-    // if we reach here and we need a smaller mesh, we will just delete faces, if anyone wants
-    // to try making an edge collapse that works no matter the situation you have my blessing.
-    while deleter.active_face_count() > config.target_face_count
-        && config.strategy == SimplificationStrategy::Aggressive
-    {
-        let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
-        if let Some(f) = face {
-            deleter.remove_face(f.id);
+    if let StopCondition::FaceCount(target_face_count) = config.stop_condition {
+        // Doing edge collapse after a certain point is very challenging, as a compromise,
+        // if we reach here, and if we need a smaller mesh, we will just delete faces, if anyone wants
+        // to try making an edge collapse that works no matter the situation you have my blessing.
+        while deleter.active_face_count() > target_face_count
+            && config.strategy == SimplificationStrategy::Aggressive
+        {
+            let face = deleter.mesh.faces_meta.iter().find(|f| f.is_active);
+            if let Some(f) = face {
+                deleter.remove_face(f.id);
+            }
         }
     }
 
@@ -878,7 +910,8 @@ where
     )
 }
 
-fn edge_cost_without_attributes<'r, S, R: RedgeContainers>(
+/// Compute the QEM error of an edge, ignoring attributes.
+pub fn edge_cost_without_attributes<'r, S, R: RedgeContainers>(
     edge: &EdgeHandle<'r, R>,
 ) -> (S, S, Vector3<S>)
 where
@@ -1203,13 +1236,13 @@ mod tests {
     use super::*;
 
     // Let's not make it a test for now, since we would need to add the assets.
-    // #[test]
+    #[test]
     fn _test_quadric_simplification_closed() {
         let ObjData {
             vertices,
             vertex_face_indices,
             ..
-        } = ObjData::from_disk_file("assets/cheburashka.obj");
+        } = ObjData::from_disk_file("assets/armadillo.obj");
         // ObjData::from_disk_file("assets/loop_cube.obj");
 
         let vertices: Vec<_> = vertices
@@ -1231,7 +1264,7 @@ mod tests {
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Aggressive,
                 attribute_simplification: AttributeSimplification::NoAttributeSimplification,
-                target_face_count: target,
+                stop_condition: StopCondition::FaceCount(target),
             },
             |_, _| false,
         );
@@ -1270,7 +1303,7 @@ mod tests {
             QuadricSimplificationConfig {
                 strategy: SimplificationStrategy::Conservative,
                 attribute_simplification: AttributeSimplification::NoAttributeSimplification,
-                target_face_count: target,
+                stop_condition: StopCondition::FaceCount(target),
             },
             |_, _| false,
         );
