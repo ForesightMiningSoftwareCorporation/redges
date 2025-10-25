@@ -485,11 +485,15 @@ pub enum GeometryCorrectness {
     DuplicatePoints(VertId, VertId),
 }
 
+/// Point structure for R*Tree spatial queries.
 #[derive(Copy, Clone, Debug, Default)]
-struct TreePoint<V: InnerSpace<S> + Debug, S: RealField> {
-    point: V,
-    id: VertId,
-    _phantom_data: PhantomData<S>,
+pub struct TreePoint<V: InnerSpace<S> + Debug, S: RealField> {
+    /// The point's position.
+    pub point: V,
+    /// The vertex ID this point represents.
+    pub id: VertId,
+    /// Phantom data for the scalar type.
+    pub _phantom_data: PhantomData<S>,
 }
 
 impl<V: Debug + InnerSpace<S>, S: RealField> PartialEq for TreePoint<V, S> {
